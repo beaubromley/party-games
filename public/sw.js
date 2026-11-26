@@ -1,5 +1,5 @@
 // Offline support: serve from cache immediately, refresh the cache in the background.
-const CACHE = 'party-v9';
+const CACHE = 'party-v10';
 const FILES = ['/', '/forehead.html', '/draw.html', '/play.html', '/style.css', '/app.js', '/game.js', '/draw.js', '/play.js', '/ui.js', '/canvas.js', '/words.js', '/teams.js', '/face.js', '/decks.json', '/manifest.webmanifest', '/icon-180.png', '/icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys()

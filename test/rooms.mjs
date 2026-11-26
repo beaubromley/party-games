@@ -13,6 +13,12 @@ assert.equal(suitable({ question: 'Which of these is a fish?', correct_answer: '
 assert.equal(suitable({ question: 'What is in beer?', correct_answer: 'Hops' }), false);
 assert.equal(suitable({ question: 'What is the largest ocean?', correct_answer: 'Pacific' }), true);
 
+const { tooClose } = await import('../lib/match.js');
+for (const [fake, truth] of [['wall', 'The city walls'], ['City wall', 'The city walls'], ['3', 'Three'], ['Hezekia', 'Hezekiah'], ['the fallen city walls', 'The city walls'], ['flamboyence', 'A flamboyance']])
+  assert.equal(tooClose(fake, truth), true, `${fake} should match ${truth}`);
+for (const [fake, truth] of [['The gates', 'The city walls'], ['Paul', 'Saul'], ['1961', '1960'], ['City towers', 'The city walls'], ['A murder', 'A parliament']])
+  assert.equal(tooClose(fake, truth), false, `${fake} should not match ${truth}`);
+assert.equal(tooClose('A cat', 'A cat running a lemonade stand', { loose: true }), false);
 const sqlite = new DatabaseSync(':memory:');
 const query = async (sql, args = []) => {
   await new Promise(r => setTimeout(r, Math.random() * 5)); // lets requests interleave
