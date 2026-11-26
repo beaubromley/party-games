@@ -107,6 +107,15 @@ const ask = async () => 'A hootenanny';
   const done = await handle(query, { action: 'next', ...a, step: v.state.step });
   assert.equal(done.state.players[0].score, 250);
 }
+{
+  const { BIBLE } = await import('../lib/modes.js');
+  for (const count of [3, 5, 8]) {
+    const picked = rules.mixed(BIBLE, count);
+    assert.equal(new Set(picked).size, count);
+    const per = Object.values(BIBLE).map(list => picked.filter(q => list.includes(q)).length);
+    assert.ok(Math.min(...per) >= 1 && Math.max(...per) - Math.min(...per) <= 1, `even mix for ${count}: ${per}`);
+  }
+}
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
