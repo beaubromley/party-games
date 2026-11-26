@@ -6,7 +6,7 @@ const piles = {};            // unused cards per deck, so rounds don't repeat
 let seconds = 60, deck, history, current, timer, phase = 'idle', detect, audio, lock;
 
 function show(id) {
-  for (const s of ['home', 'stage', 'results']) $(s).hidden = s !== id;
+  for (const s of ['home', 'preview', 'stage', 'results']) $(s).hidden = s !== id;
   if (id === 'home') $('homeTeams').replaceChildren(scoreboard());
   scrollTo(0, 0);
 }
@@ -101,6 +101,16 @@ $('pass').onclick = () => answer('pass');
 $('quit').onclick = () => { stop(); show('home'); };
 $('again').onclick = () => start(deck);
 $('back').onclick = () => show('home');
+// Shows a sample, not the whole deck, so the round isn't spoiled.
+function peek(d) {
+  const make = (tag, props) => Object.assign(document.createElement(tag), props);
+  const list = make('ul', { id: 'sample', className: 'samples' });
+  list.append(...shuffle(d.cards).slice(0, 12).map(card => make('li', { textContent: card })));
+  $('preview').replaceChildren(make('h1', { textContent: d.name }), make('p', { textContent: `12 of ${d.cards.length} cards` }), list,
+    make('button', { className: 'big', textContent: 'Play this deck', onclick: () => start(d) }),
+    make('button', { className: 'big alt', textContent: 'Back', onclick: () => show('home') }));
+  show('preview');
+}
 function pickTime(value, chosen) {
   seconds = value;
   for (const b of $('times').querySelectorAll('button')) b.classList.toggle('on', b === chosen);
@@ -130,7 +140,7 @@ try {
   const groups = Map.groupBy ? Map.groupBy(decks, d => d.group) : decks.reduce((m, d) => m.set(d.group, [...(m.get(d.group) ?? []), d]), new Map());
   $('decks').replaceChildren(...[...groups].flatMap(([group, list]) => [
     Object.assign(document.createElement('h2'), { textContent: group }),
-    ...list.map(d => Object.assign(document.createElement('button'), { textContent: d.name, onclick: () => start(d) })),
+    ...list.map(d => Object.assign(document.createElement('button'), { textContent: d.name, onclick: () => $('peek').checked ? peek(d) : start(d) })),
   ]));
 } catch { $('decks').textContent = "Couldn't load decks. Check your connection and reload."; }
 

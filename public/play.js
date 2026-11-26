@@ -1,14 +1,16 @@
 import { el, homeLink } from './ui.js';
 import { picture, sketchpad } from './canvas.js';
 import { shrink } from './face.js';
+import { BLUFF_TOPICS } from './topics.js';
 
 const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
 let game = params.get('game') === 'doodle' ? 'doodle' : 'bluff';
 const read = () => { try { return JSON.parse(localStorage.getItem('room')); } catch { return null; } };
 const write = v => { try { v ? localStorage.setItem('room', JSON.stringify(v)) : localStorage.removeItem('room'); } catch {} };
-const TOPICS = [['trivia', 'Trivia'], ['thanksgiving', 'Thanksgiving'], ['music', 'Music'], ['sports', 'Sports'], ['oklahoma', 'Oklahoma history'], ['disney', 'Disney Channel'], ['bible', 'Bible'], ['words', 'Word meanings'], ['about', 'About us']];
 let topic = 'trivia';
+let preview = null; // { topic, samples }
+let lastScreen = '';
 let me = read(), version = 0, shown = '', state, timer, busy = false;
 const note = el('p', { className: 'note error', role: 'status' });
 const waiting = el('p', { className: 'note' });
@@ -44,6 +46,33 @@ function facePicker() {
     mine.face && button('Remove photo', () => sendFace(null), 'alt'),
     el('p', { className: 'fine' }, 'Shows when you fool someone. Only this room sees it. It is deleted the next time a room is created after this one has been idle for a day.'));
 }
+const label = id => BLUFF_TOPICS.find(([t]) => t === id)?.[1];
+
+// Everyone can browse and preview. The host's choice starts the game; others send a request.
+function topicPicker(host) {
+  if (game !== 'bluff') return null;
+  const mine = state.requests.find(r => r.id === state.you)?.topic;
+  const chosen = host ? topic : preview?.topic ?? mine;
+  const showSamples = async () => {
+    const wanted = chosen;
+    try {
+      const { samples } = await api({ action: 'preview', topic: wanted, ...me });
+      preview = { topic: wanted, samples }; render();
+    } catch (err) { note.textContent = err.message; }
+  };
+  return el('section', {},
+    el('h2', {}, host ? 'Pick a topic' : 'Topics'),
+    el('div', { className: 'chips', role: 'group', ariaLabel: 'Topic' }, BLUFF_TOPICS.map(([id, name]) => {
+      const asked = state.requests.filter(r => r.topic === id).length;
+      return el('button', { className: id === chosen ? 'on' : '', ariaPressed: id === chosen,
+        onclick: () => { if (host) topic = id; preview = host ? null : { topic: id }; render(); } }, asked ? `${name} (${asked})` : name);
+    })),
+    chosen && button(`Preview ${label(chosen)}`, showSamples, 'alt'),
+    preview?.samples && preview.topic === chosen && el('ul', { className: 'samples' }, preview.samples.map(q => el('li', {}, q))),
+    !host && chosen && button(mine === chosen ? `Withdraw request for ${label(chosen)}` : `Ask host for ${label(chosen)}`,
+      () => send({ action: 'request', topic: chosen })),
+    host && state.requests.length > 0 && el('p', {}, 'Requests: ', state.requests.map(r => `${r.name} wants ${label(r.topic)}`).join('. ')));
+}
 const title = () => game === 'doodle' ? 'Doodle Bluff' : 'Bluff';
 
 async function api(body) {
@@ -53,7 +82,7 @@ async function api(body) {
   return data;
 }
 const button = (label, onclick, extra = '') => el('button', { className: 'big ' + extra, onclick }, label);
-function leave() { clearTimeout(timer); faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function leave() { clearTimeout(timer); preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -86,7 +115,8 @@ function apply(data) {
   waiting.textContent = state.waiting.length ? `Waiting on: ${state.waiting.join(', ')}` : '';
   // Only rebuild when the screen really changes, so a half-typed answer or drawing survives polling.
   const key = [state.step, state.sent, state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
-    FACE_SCREENS.includes(state.phase) && state.players.map(p => p.face).join()].join(':');
+    FACE_SCREENS.includes(state.phase) && state.players.map(p => p.face).join(),
+    state.requests.map(r => r.id + r.topic).join()].join(':');
   if (key !== shown) { shown = key; note.textContent = ''; render(); }
   loadFaces();
 }
@@ -98,18 +128,15 @@ function render() {
     .map(p => el('li', {}, faceImg(p.id), `${p.name}: ${p.score}${s.gains?.[p.id] ? ` (+${s.gains[p.id]})` : ''}`)));
   const subject = () => [s.question && el('p', { className: 'question' }, s.question), s.drawing && picture(s.drawing)];
   const startButtons = () => game === 'bluff'
-    ? [el('div', { className: 'chips', role: 'group', ariaLabel: 'Topic' }, TOPICS.map(([id, label]) =>
-        el('button', { className: id === topic ? 'on' : '', ariaPressed: id === topic, onclick: () => { topic = id; render(); } }, label))),
-      ...[3, 5, 8].map(n => button(`Start: ${n} questions`, () => send({ action: 'start', topic, rounds: n })))]
+    ? [3, 5, 8].map(n => button(`Start: ${n} questions`, () => send({ action: 'start', topic, rounds: n })))
     : [button('Start drawing', () => send({ action: 'start' }))];
-
   if (s.phase === 'lobby') {
     const link = `${location.origin}/play.html?game=${game}&code=${me.code}`;
     nodes.push(el('h1', {}, title()), el('p', {}, 'Room code'), el('p', { className: 'code' }, me.code),
       button('Share invite link', async () => {
         try { navigator.share ? await navigator.share({ url: link }) : (await navigator.clipboard.writeText(link), note.textContent = 'Link copied'); } catch {}
       }, 'alt'),
-      el('ul', { id: 'recap' }, s.players.map(p => el('li', {}, faceImg(p.id), p.name))), facePicker());
+      el('ul', { id: 'recap' }, s.players.map(p => el('li', {}, faceImg(p.id), p.name))), facePicker(), topicPicker(host));
     if (host && s.players.length >= 2) nodes.push(...startButtons());
     else nodes.push(el('p', {}, s.players.length < 2 ? 'Need at least 2 players.' : 'Waiting for the host to start.'));
   } else if (s.phase === 'drawing') {
@@ -155,6 +182,7 @@ function render() {
   } else {
     const top = Math.max(...s.players.map(p => p.score));
     nodes.push(el('h1', {}, 'Final scores'), el('p', { className: 'question' }, `${s.players.filter(p => p.score === top).map(p => p.name).join(' & ')} wins!`), scores());
+    nodes.push(topicPicker(host));
     if (host) nodes.push(...startButtons());
     nodes.push(facePicker());
   }
@@ -162,7 +190,9 @@ function render() {
   nodes.push(waiting, note, button('Leave game', () => { if (confirm('Leave this game? You cannot rejoin once it has started.')) leave(); }, 'alt'),
     game === 'bluff' && el('footer', {}, 'Trivia: ', el('a', { href: 'https://opentdb.com' }, 'Open Trivia Database'), ' (CC BY-SA 4.0), filtered, plus some written for this app.'));
   app.replaceChildren(...nodes.filter(Boolean));
-  scrollTo(0, 0);
+  // Jump to the top for a new screen only, not when browsing topics.
+  const screen = `${s.step}:${s.phase}`;
+  if (screen !== lastScreen) { lastScreen = screen; scrollTo(0, 0); }
 }
 
 function lobbyForm() {

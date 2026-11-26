@@ -68,3 +68,7 @@ canvas.pad { width: min(100%, 58dvh); }
 .bluffed { text-align: center; background: var(--gold); border: 2px solid var(--ink); padding: 12px; margin-bottom: 12px; }
 .bluffed h2 { margin: 0; font-size: 28px; }
 .fine { font-size: 12px; opacity: .7; margin-top: 6px; }
+.toggle { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-weight: 600; min-height: 44px; }
+.toggle input { width: 24px; height: 24px; margin: 0; }
+.samples { padding-left: 20px; margin: 12px 0; font-size: 18px; line-height: 1.6; }
+h2 { margin-bottom: 4px; }

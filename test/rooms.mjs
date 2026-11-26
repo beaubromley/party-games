@@ -155,6 +155,16 @@ for (const game of ['bluff', 'doodle']) {
     for (const p of phones) await p.waitForFunction(() => document.querySelectorAll('li img.face').length === 3, null, { timeout: 8000 });
     await host.screenshot({ path: '/tmp/lobby.png', fullPage: true });
   }
+  if (game === 'bluff') {
+    const guest = guests[0];
+    await click(guest, 'Sports'); await click(guest, 'Preview Sports');
+    await guest.locator('.samples li').nth(2).waitFor({ timeout: 8000 });
+    await click(guest, 'Ask host for Sports');
+    await host.getByText('Bo wants Sports').waitFor({ timeout: 8000 });
+    await click(host, 'Sports (1)');
+    await click(host, 'Preview Sports'); await host.locator('.samples li').first().waitFor({ timeout: 8000 });
+    await host.screenshot({ path: '/tmp/topics.png', fullPage: true });
+  }
   await click(host, game === 'bluff' ? 'Start: 3 questions' : 'Start drawing');
   if (game === 'doodle') for (const p of phones) { await p.locator('canvas.pad').waitFor(); await scribble(p); if (p === host) await host.screenshot({ path: '/tmp/doodle.png', fullPage: true }); await click(p, 'Send drawing'); }
   for (let round = 0; round < 3; round++) {

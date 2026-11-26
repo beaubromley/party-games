@@ -21,10 +21,12 @@
     <button data-s="60" class="on">60s</button><button data-s="90">90s</button><button data-s="120">2 min</button>
     <label>Custom <input id="custom" type="number" inputmode="numeric" min="10" max="600" placeholder="sec"></label>
   </div>
+  <label class="toggle"><input type="checkbox" id="peek"> Preview a deck before playing</label>
   <div id="decks">Loading decks…</div>
   <div id="homeTeams"></div>
   <footer>Topic decks from <a href="https://www.wikidata.org">Wikidata</a> (CC0). Others written for this app. Family friendly, ages 10+.</footer>
 </main>
+<main id="preview" hidden></main>
 <section id="stage" hidden>
   <button id="quit">Quit</button>
   <div id="clock"></div>
