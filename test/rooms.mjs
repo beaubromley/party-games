@@ -22,16 +22,32 @@ const query = async (sql, args = []) => {
 };
 await migrate(query);
 
-// Eight phones answering at the same instant must all be saved.
+// Twelve phones answering at the same instant must all be saved.
 const first = await handle(query, { action: 'create', game: 'bluff', name: 'P0' });
-const joined = await Promise.all([1, 2, 3, 4, 5, 6, 7].map(i => handle(query, { action: 'join', code: first.code, name: 'P' + i })));
+const joined = await Promise.all(Array.from({ length: 11 }, (_, i) => i + 1).map(i => handle(query, { action: 'join', code: first.code, name: 'P' + i })));
 const all = [first, ...joined].map(p => ({ code: p.code, playerId: p.playerId, secret: p.secret }));
-await assert.rejects(handle(query, { action: 'join', code: first.code, name: 'Ninth' }), /full/);
+await assert.rejects(handle(query, { action: 'join', code: first.code, name: 'Thirteenth' }), /full/);
 let r = await handle(query, { action: 'start', ...all[0], step: 0, rounds: 3 });
 await Promise.all(all.map((p, i) => handle(query, { action: 'fake', ...p, step: r.state.step, text: 'lie ' + i })));
 r = await handle(query, { action: 'poll', ...all[0] });
-assert.equal(r.state.phase, 'voting'); assert.equal(r.state.options.length, 9);
+assert.equal(r.state.phase, 'voting'); assert.equal(r.state.options.length, 13);
 assert.ok(r.state.options.every(o => !('truth' in o) && !('authors' in o)), 'answers hidden while voting');
+await Promise.all(all.map(async p => {
+  const mine = await handle(query, { action: 'poll', ...p });
+  await handle(query, { action: 'vote', ...p, step: mine.state.step, choice: mine.state.options.findIndex(o => !o.mine) });
+}));
+assert.equal((await handle(query, { action: 'poll', ...all[0] })).state.phase, 'reveal');
+// All twelve drawings sent at once, in Doodle Bluff.
+{
+  const h = await handle(query, { action: 'create', game: 'doodle', name: 'D0' });
+  const g = await Promise.all(Array.from({ length: 11 }, (_, i) => handle(query, { action: 'join', code: h.code, name: 'D' + (i + 1) })));
+  const ps = [h, ...g].map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
+  const s = await handle(query, { action: 'start', ...ps[0], step: 0 });
+  await Promise.all(ps.map(p => handle(query, { action: 'drawing', ...p, step: s.state.step, strokes: [[0, 12, [1, 2, 3, 4]]] })));
+  const after = await handle(query, { action: 'poll', ...ps[0] });
+  assert.equal(after.state.phase, 'writing'); assert.equal(after.state.total, 12);
+}
+r = await handle(query, { action: 'poll', ...all[0] });
 await assert.rejects(handle(query, { action: 'poll', ...all[0], secret: 'wrong' }), /not in this room/);
 await assert.rejects(handle(query, { action: 'next', ...all[1], step: r.state.step }), /host/);
 await assert.rejects(handle(query, { action: 'next', ...all[0], step: 0 }), /moved on/);
