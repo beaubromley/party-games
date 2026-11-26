@@ -1,0 +1,27 @@
+* { box-sizing: border-box; margin: 0; }
+body { font-family: ui-rounded, -apple-system, system-ui, sans-serif; background: #1b1446; color: #fff; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+[hidden] { display: none !important; }
+main { max-width: 520px; margin: auto; padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); text-align: center; }
+h1 { font-size: 44px; margin-bottom: 8px; }
+p { line-height: 1.5; opacity: .9; }
+button { font: inherit; font-weight: 700; border: 0; border-radius: 16px; color: #1b1446; background: #fff; padding: 12px 18px; }
+#times { display: flex; gap: 8px; justify-content: center; margin: 20px 0; }
+#times button { background: #3a2f7a; color: #fff; }
+#times button.on { background: #ffd23f; color: #1b1446; }
+#decks { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#decks button { min-height: 120px; font-size: 18px; }
+#decks span { display: block; font-size: 40px; }
+footer { font-size: 12px; opacity: .6; margin-top: 24px; } a { color: inherit; }
+#stage { position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: #2b5cff; display: flex; align-items: center; justify-content: center; text-align: center; }
+/* iOS cannot lock orientation, so a portrait screen gets a sideways stage. */
+@media (orientation: portrait) { #stage { width: 100dvh; height: 100vw; transform-origin: top left; transform: translateX(100vw) rotate(90deg); } }
+#stage.got { background: #14a44d; } #stage.pass { background: #e8710a; }
+#card { font-size: 64px; font-weight: 800; padding: 0 56px; line-height: 1.1; overflow-wrap: anywhere; }
+#clock { position: absolute; top: 14px; font-size: 32px; font-weight: 700; }
+#quit { position: absolute; top: 12px; left: max(16px, env(safe-area-inset-left)); background: #0004; color: #fff; }
+#controls { position: absolute; bottom: 14px; left: 48px; right: 48px; display: flex; justify-content: space-between; }
+#controls button { background: #0004; color: #fff; min-width: 140px; }
+#recap { list-style: none; padding: 0; margin: 16px 0 24px; font-size: 22px; line-height: 1.7; }
+#recap .skipped { opacity: .45; text-decoration: line-through; }
+.big { display: block; width: 100%; margin-top: 12px; font-size: 20px; }
+.alt { background: #3a2f7a; color: #fff; }

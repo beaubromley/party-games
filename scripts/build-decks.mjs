@@ -1,0 +1,48 @@
+// Builds public/decks.json: hand-written decks plus topic decks from Wikidata (CC0).
+// A deck that fails to download is skipped, so a Wikidata outage never breaks the deploy.
+import { readFile, writeFile } from 'node:fs/promises';
+
+const popular = (where, min, limit = 150) => `
+SELECT ?item ?itemLabel ?n WHERE {
+  ${where}
+  ?item wikibase:sitelinks ?n . FILTER(?n > ${min})
+  ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
+} ORDER BY DESC(?n) LIMIT ${limit}`;
+
+// Family friendly, ages 10+: popular titles that don't belong in a family deck.
+const BLOCKED = new Set(['Sausage Party', 'South Park: Bigger, Longer & Uncut', 'Heavy Metal', 'Fritz the Cat',
+  'The End of Evangelion', 'Anomalisa', 'Akira', 'Ghost in the Shell', 'Perfect Blue', 'Waltz with Bashir',
+  'Persepolis', 'Team America: World Police', 'Grave of the Fireflies', 'Belladonna of Sadness']);
+
+const TOPICS = [
+  { id: 'countries', name: 'Countries', emoji: '🌎', query: popular('?item wdt:P31 wd:Q6256 .', 100) },
+  { id: 'animated', name: 'Animated Movies', emoji: '🎬', query: popular('?item wdt:P31 wd:Q29168811 .', 30, 100) },
+  { id: 'landmarks', name: 'Famous Places', emoji: '🗽', query: popular('?item wdt:P31 wd:Q570116 .', 40, 100) },
+  { id: 'hoops', name: 'Basketball Stars', emoji: '🏀', query: popular('?item wdt:P106 wd:Q3665646 .', 55, 80) },
+];
+
+async function fetchTopic({ query, ...deck }) {
+  const url = 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(query);
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'party-games/1.0 (https://github.com/beaubromley/party-games)', Accept: 'application/sparql-results+json' },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const rows = (await res.json()).results.bindings;
+  const cards = [...new Set(rows.map(r => r.itemLabel.value.replace(/\s*\(.*?\)$/, '')))].filter(c => c.length <= 40 && !BLOCKED.has(c));
+  if (cards.length < 20) throw new Error(`only ${cards.length} cards`);
+  return { ...deck, source: 'Wikidata', cards };
+}
+
+const decks = JSON.parse(await readFile(new URL('../data/handwritten.json', import.meta.url)));
+for (const topic of TOPICS) {
+  try {
+    const deck = await fetchTopic(topic);
+    decks.push(deck);
+    console.log(`deck ${deck.id}: ${deck.cards.length} cards, e.g. ${deck.cards.slice(0, 8).join(' | ')}`);
+  } catch (err) {
+    console.warn(`SKIPPED deck ${topic.id}: ${err.message}`);
+  }
+}
+await writeFile(new URL('../public/decks.json', import.meta.url), JSON.stringify(decks));
+console.log(`wrote ${decks.length} decks`);
