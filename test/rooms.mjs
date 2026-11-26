@@ -151,7 +151,7 @@ for (const game of ['bluff', 'doodle']) {
     await g.getByPlaceholder('Your name').fill(['Bo', 'Cy'][i]); await click(g, 'Join room');
   }
   if (game === 'bluff') {
-    for (const p of phones) await p.locator('#face').setInputFiles(new URL('../public/icon-180.png', import.meta.url).pathname);
+    for (const p of phones) await p.locator('#face').setInputFiles(new URL('../public/apple-touch-icon.png', import.meta.url).pathname);
     for (const p of phones) await p.waitForFunction(() => document.querySelectorAll('li img.face').length === 3, null, { timeout: 8000 });
     await host.screenshot({ path: '/tmp/lobby.png', fullPage: true });
   }
