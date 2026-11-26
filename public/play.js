@@ -13,6 +13,7 @@ let me = read(), version = 0, shown = '', state, timer, busy = false;
 const note = el('p', { className: 'note error', role: 'status' });
 const waiting = el('p', { className: 'note' });
 let faces = {}, facesKey = '';
+let draft = { step: 0, text: '' }; // typed answer, kept across redraws
 const FACE_SCREENS = ['lobby', 'reveal', 'done']; // screens with nothing half-typed to lose
 const faceImg = (id, extra = '') => faces[id] && el('img', { className: 'face ' + extra, src: faces[id], alt: '' });
 async function loadFaces() {
@@ -84,7 +85,7 @@ function apply(data) {
   version = data.version; state = data.state; game = state.game;
   waiting.textContent = state.waiting.length ? `Waiting on: ${state.waiting.join(', ')}` : '';
   // Only rebuild when the screen really changes, so a half-typed answer or drawing survives polling.
-  const key = [state.step, state.sent, state.phase === 'lobby' && state.players.length,
+  const key = [state.step, state.sent, state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
     FACE_SCREENS.includes(state.phase) && state.players.map(p => p.face).join()].join(':');
   if (key !== shown) { shown = key; note.textContent = ''; render(); }
   loadFaces();
@@ -123,9 +124,17 @@ function render() {
     if (s.isArtist) nodes.push(el('p', { className: 'question' }, 'Your masterpiece! Sit back while they make up titles.'));
     else if (s.sent) nodes.push(el('p', { className: 'question' }, 'Sent!'));
     else {
-      const input = el('input', { maxLength: 60, placeholder: s.isSubject ? 'Your honest answer' : game === 'bluff' ? 'Your fake answer' : 'Your fake title', autocomplete: 'off', enterKeyHint: 'send' });
+      if (draft.step !== s.step) draft = { step: s.step, text: '' };
+      if (s.hint && draft.hint !== s.hint) draft = { step: s.step, text: s.hint, hint: s.hint };
+      const input = el('input', { value: draft.text, oninput: () => { draft.text = input.value; }, maxLength: 60, placeholder: s.isSubject ? 'Your honest answer' : game === 'bluff' ? 'Your fake answer' : 'Your fake title', autocomplete: 'off', enterKeyHint: 'send' });
       if (s.subject) nodes.push(el('p', {}, s.isSubject ? 'This one is about you. Tell the truth.' : `Answer as if you were ${s.subject}.`));
       nodes.push(el('form', { onsubmit: e => { e.preventDefault(); send({ action: 'fake', text: input.value }); } }, input, el('button', { className: 'big' }, 'Send')));
+      if (s.canHint) nodes.push(button('AI help (half points)', async e => {
+        e.target.disabled = true; e.target.textContent = 'Thinking…';
+        await send({ action: 'hint' });
+        if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = 'AI help (half points)'; }
+      }, 'alt'));
+      if (s.hint) nodes.push(el('p', { className: 'fine' }, 'Suggested by Claude. Edit it if you like. Fooling someone this round earns half.'));
     }
   } else if (s.phase === 'voting') {
     nodes.push(...subject(), el('p', {}, 'Which one is real?'));
@@ -140,7 +149,7 @@ function render() {
     nodes.push(...subject(), s.artist && el('p', {}, `Drawn by ${s.artist}`),
       ...[...s.options].sort((a, b) => a.truth - b.truth).map(o => el('p', { className: 'note' },
         ...o.authorIds.map(id => faceImg(id)), el('b', {}, `${o.truth ? 'REAL: ' : 'Fake: '}${o.text}`), el('br'),
-        o.truth ? '' : `by ${o.authors.join(' & ')} · `, o.voters.length ? `picked by ${o.voters.join(', ')}` : 'nobody picked it')),
+        o.truth ? '' : `by ${o.authors.join(' & ')}${o.helped.length ? ` (AI help: ${o.helped.join(', ')})` : ''} · `, o.voters.length ? `picked by ${o.voters.join(', ')}` : 'nobody picked it')),
       scores());
     if (host) nodes.push(button(s.index + 1 >= s.total ? 'Final scores' : 'Next round', () => send({ action: 'next' })));
   } else {

@@ -14,3 +14,4 @@ Family party games for iPhone (ages 10+), on Vercel. No npm dependencies.
 - `npm run build` writes the decks (Wikidata, CC0) and imports questions (Open Trivia DB, CC BY-SA 4.0).
 - `npm test` needs Playwright; it uses an in-memory SQLite in place of Turso.
 - `/api/health` checks the database.
+- Bluff's AI help calls Claude Haiku with `ANTHROPIC_API_KEY`, capped at 300 requests a day.

@@ -81,13 +81,33 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
   await assert.rejects(handle(query, { action: 'face', ...a, data: 'javascript:alert(1)' }), /didn't work/);
   await assert.rejects(handle(query, { action: 'faces', ...a, secret: 'no' }), /not in this room/);
 }
+// AI help: halves fooling points, once per round, free if it fails.
+const ask = async () => 'A hootenanny';
+{
+  const h = await handle(query, { action: 'create', game: 'bluff', name: 'A' });
+  const j = await handle(query, { action: 'join', code: h.code, name: 'B' });
+  const [a, b] = [h, j].map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
+  const { state } = await handle(query, { action: 'start', ...a, step: 0, topic: 'bible', rounds: 3 });
+  const step = state.step;
+  await assert.rejects(handle(query, { action: 'hint', ...a, step }, { ask: async () => { throw new Error('down'); } }), /No points lost/);
+  const both = await Promise.allSettled([1, 2].map(() => handle(query, { action: 'hint', ...a, step }, { ask })));
+  assert.equal(both.filter(x => x.status === 'fulfilled').length, 1);
+  assert.equal((await handle(query, { action: 'poll', ...a })).state.hint, 'A hootenanny');
+  assert.equal((await handle(query, { action: 'poll', ...b })).state.hint, undefined, 'hints are private');
+  await handle(query, { action: 'fake', ...a, step, text: 'A hootenanny' });
+  const v = await handle(query, { action: 'fake', ...b, step, text: 'zzz' });
+  const choice = v.state.options.findIndex(o => o.text === 'A hootenanny');
+  await handle(query, { action: 'vote', ...b, step: v.state.step, choice });
+  const done = await handle(query, { action: 'next', ...a, step: v.state.step });
+  assert.equal(done.state.players[0].score, 250);
+}
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://x');
   if (pathname === '/api/game') {
     let body = ''; for await (const c of req) body += c;
-    try { res.end(JSON.stringify(await handle(query, JSON.parse(body)))); }
+    try { res.end(JSON.stringify(await handle(query, JSON.parse(body), { ask }))); }
     catch (e) { res.writeHead(e instanceof rules.GameError ? 400 : 500); res.end(JSON.stringify({ error: e.message })); }
     return;
   }
@@ -128,6 +148,11 @@ for (const game of ['bluff', 'doodle']) {
     const writers = [];
     for (const p of phones) { await p.getByText(`Round ${round + 1} of 3`).waitFor({ timeout: 8000 }); if (await p.locator('input').count()) writers.push(p); }
     assert.equal(writers.length, game === 'bluff' ? 3 : 2);
+    if (game === 'bluff' && round === 0) {
+      await click(writers[1], 'AI help (half points)');
+      await writers[1].getByText('Suggested by Claude').waitFor({ timeout: 8000 });
+      assert.equal(await writers[1].locator('input').inputValue(), 'A hootenanny');
+    }
     for (const [i, p] of writers.entries()) {
       await p.locator('input').fill(`fib ${round} ${i}`);
       if (i === writers.length - 1) await p.waitForTimeout(1700); // typed text must survive a poll
