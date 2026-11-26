@@ -9,18 +9,17 @@ SELECT ?item ?itemLabel ?n WHERE {
   ?item rdfs:label ?itemLabel . FILTER(LANG(?itemLabel) = "en")
 } ORDER BY DESC(?n) LIMIT ${limit}`;
 
-// Family friendly, ages 10+: popular titles that don't belong in a family deck.
-const BLOCKED = new Set(['Sausage Party', 'South Park: Bigger, Longer & Uncut', 'Heavy Metal', 'Fritz the Cat',
-  'The End of Evangelion', 'Anomalisa', 'Akira', 'Ghost in the Shell', 'Perfect Blue', 'Waltz with Bashir',
-  'Persepolis', 'Team America: World Police', 'Grave of the Fireflies', 'Belladonna of Sadness']);
+// Family friendly, ages 10+: the movie deck only uses titles someone has reviewed.
+const APPROVED_MOVIES = new Set(JSON.parse(await readFile(new URL('../data/approved-movies.json', import.meta.url))));
+const RENAME = { "People's Republic of China": 'China' };
 
 const TOPICS = [
   { id: 'countries', name: 'Countries', emoji: '🌎', query: popular('?item wdt:P31 wd:Q6256 .', 100) },
-  { id: 'animated', name: 'Animated Movies', emoji: '🎬', query: popular('VALUES ?type { wd:Q202866 wd:Q29168811 } ?item wdt:P31 ?type .', 30, 100) },
+  { id: 'animated', allow: APPROVED_MOVIES, name: 'Animated Movies', emoji: '🎬', query: popular('VALUES ?type { wd:Q202866 wd:Q29168811 } ?item wdt:P31 ?type .', 30, 100) },
   { id: 'hoops', name: 'Basketball Stars', emoji: '🏀', query: popular('?item wdt:P106 wd:Q3665646 ; wdt:P3647 ?nbaId .', 45, 80) },
 ];
 
-async function fetchTopic({ query, ...deck }) {
+async function fetchTopic({ query, allow, ...deck }) {
   const url = 'https://query.wikidata.org/sparql?format=json&query=' + encodeURIComponent(query);
   const res = await fetch(url, {
     headers: { 'User-Agent': 'party-games/1.0 (https://github.com/beaubromley/party-games)', Accept: 'application/sparql-results+json' },
@@ -28,7 +27,7 @@ async function fetchTopic({ query, ...deck }) {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const rows = (await res.json()).results.bindings;
-  const cards = [...new Set(rows.map(r => r.itemLabel.value.replace(/\s*\(.*?\)$/, '')))].filter(c => c.length <= 40 && !BLOCKED.has(c));
+  const cards = [...new Set(rows.map(r => r.itemLabel.value.replace(/\s*\(.*?\)$/, '')))].filter(c => c.length <= 40 && (!allow || allow.has(c))).map(c => RENAME[c] ?? c);
   if (cards.length < 20) throw new Error(`only ${cards.length} cards`);
   return { ...deck, source: 'Wikidata', cards };
 }
