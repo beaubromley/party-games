@@ -16,9 +16,8 @@ const BLOCKED = new Set(['Sausage Party', 'South Park: Bigger, Longer & Uncut', 
 
 const TOPICS = [
   { id: 'countries', name: 'Countries', emoji: '🌎', query: popular('?item wdt:P31 wd:Q6256 .', 100) },
-  { id: 'animated', name: 'Animated Movies', emoji: '🎬', query: popular('?item wdt:P31 wd:Q29168811 .', 30, 100) },
-  { id: 'landmarks', name: 'Famous Places', emoji: '🗽', query: popular('?item wdt:P31 wd:Q570116 .', 40, 100) },
-  { id: 'hoops', name: 'Basketball Stars', emoji: '🏀', query: popular('?item wdt:P106 wd:Q3665646 .', 55, 80) },
+  { id: 'animated', name: 'Animated Movies', emoji: '🎬', query: popular('VALUES ?type { wd:Q202866 wd:Q29168811 } ?item wdt:P31 ?type .', 30, 100) },
+  { id: 'hoops', name: 'Basketball Stars', emoji: '🏀', query: popular('?item wdt:P106 wd:Q3665646 ; wdt:P3647 ?nbaId .', 45, 80) },
 ];
 
 async function fetchTopic({ query, ...deck }) {

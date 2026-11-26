@@ -286,5 +286,42 @@
    "Key",
    "Phone charger"
   ]
+ },
+ {
+  "id": "places",
+  "name": "Famous Places",
+  "emoji": "🗽",
+  "source": "Hand-written",
+  "cards": [
+   "Statue of Liberty",
+   "Eiffel Tower",
+   "Grand Canyon",
+   "Mount Rushmore",
+   "Great Wall of China",
+   "Pyramids of Giza",
+   "Taj Mahal",
+   "Big Ben",
+   "Colosseum",
+   "Niagara Falls",
+   "Golden Gate Bridge",
+   "White House",
+   "Mount Everest",
+   "Leaning Tower of Pisa",
+   "Stonehenge",
+   "Empire State Building",
+   "Hollywood Sign",
+   "Yellowstone",
+   "Disney World",
+   "Times Square",
+   "Sydney Opera House",
+   "The Alamo",
+   "Gateway Arch",
+   "Machu Picchu",
+   "Amazon Rainforest",
+   "Sahara Desert",
+   "Washington Monument",
+   "Space Needle",
+   "London Bridge"
+  ]
  }
 ]
