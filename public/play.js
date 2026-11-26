@@ -7,7 +7,7 @@ const params = new URLSearchParams(location.search);
 let game = params.get('game') === 'doodle' ? 'doodle' : 'bluff';
 const read = () => { try { return JSON.parse(localStorage.getItem('room')); } catch { return null; } };
 const write = v => { try { v ? localStorage.setItem('room', JSON.stringify(v)) : localStorage.removeItem('room'); } catch {} };
-const TOPICS = [['trivia', 'Trivia'], ['bible', 'Bible'], ['words', 'Word meanings'], ['about', 'About us']];
+const TOPICS = [['trivia', 'Trivia'], ['thanksgiving', 'Thanksgiving'], ['music', 'Music'], ['sports', 'Sports'], ['oklahoma', 'Oklahoma history'], ['disney', 'Disney Channel'], ['bible', 'Bible'], ['words', 'Word meanings'], ['about', 'About us']];
 let topic = 'trivia';
 let me = read(), version = 0, shown = '', state, timer, busy = false;
 const note = el('p', { className: 'note error', role: 'status' });

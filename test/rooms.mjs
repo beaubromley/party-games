@@ -69,7 +69,7 @@ rules.vote(about, 'b', truth); rules.vote(about, 'c', truth);
 assert.equal(about.players[0].score, 1000);
 rules.advance(about); rules.submitFake(about, 'a', 'x'); rules.advance(about);
 assert.equal(about.phase, 'done');
-for (const topic of ['bible', 'words', 'about']) {
+for (const topic of ['bible', 'words', 'about', 'thanksgiving', 'music', 'sports', 'oklahoma', 'disney']) {
   const x = await handle(query, { action: 'create', game: 'bluff', name: 'A' });
   for (const name of ['B', 'C']) await handle(query, { action: 'join', code: x.code, name });
   const y = await handle(query, { action: 'start', code: x.code, playerId: x.playerId, secret: x.secret, step: 0, topic, rounds: 8 });
