@@ -1,2 +1,2 @@
 { "name": "party-games", "private": true, "type": "module",
-  "scripts": { "build": "node scripts/build-decks.mjs", "test": "node test/smoke.mjs" } }
+  "scripts": { "build": "node scripts/build-decks.mjs && node scripts/import-questions.mjs", "test": "node test/smoke.mjs && node test/rooms.mjs" } }

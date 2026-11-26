@@ -1,9 +1,16 @@
 # party-games
 
-Family party games for iPhone, deployed on Vercel. No npm dependencies.
+Family party games for iPhone (ages 10+), on Vercel. No npm dependencies.
 
-- **Forehead**: tilt-to-answer guessing game (built)
-- **Bluff**: multi-phone bluffing trivia on Turso (planned)
+| Game | Phones | Storage |
+|---|---|---|
+| Forehead | 1 | none |
+| Quick Draw | 1 | none |
+| Bluff | 3-8 | Turso |
+| Doodle Bluff | 3-8 | Turso |
 
-`npm run build` writes `public/decks.json` (hand-written decks plus Wikidata, CC0).
-Preview with any static server on `public/`. `npm test` needs Playwright installed.
+- `lib/rules.js` game rules, `lib/rooms.js` room storage, `api/` Vercel functions.
+- Needs `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
+- `npm run build` writes the decks (Wikidata, CC0) and imports questions (Open Trivia DB, CC BY-SA 4.0).
+- `npm test` needs Playwright; it uses an in-memory SQLite in place of Turso.
+- `/api/health` checks the database.

@@ -21,3 +21,9 @@ export function shuffle(list, random = Math.random) {
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
+
+// A custom round length in seconds, or null if it is outside 10 to 600.
+export function roundSeconds(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 10 && n <= 600 ? n : null;
+}

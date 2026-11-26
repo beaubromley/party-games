@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#f4efe3">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Party Games">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="stylesheet" href="/style.css">
+<title>Forehead</title>
+</head>
+<body>
+<main id="home">
+  <a class="home" href="/">All games</a>
+  <h1>Forehead</h1>
+  <p>Hold the phone to your forehead. Friends give clues.<br><b>Tilt down</b> = got it. <b>Tilt up</b> = pass.</p>
+  <div id="times" role="group" aria-label="Round length">
+    <button data-s="60" class="on">60s</button><button data-s="90">90s</button><button data-s="120">2 min</button>
+    <label>Custom <input id="custom" type="number" inputmode="numeric" min="10" max="600" placeholder="sec"></label>
+  </div>
+  <div id="decks">Loading decks…</div>
+  <div id="homeTeams"></div>
+  <footer>Topic decks from <a href="https://www.wikidata.org">Wikidata</a> (CC0). Others written for this app. Family friendly, ages 10+.</footer>
+</main>
+<section id="stage" hidden>
+  <button id="quit">Quit</button>
+  <div id="clock"></div>
+  <div id="card" aria-live="polite"></div>
+  <div id="controls"><button id="pass">Pass</button><button id="got">Got it</button></div>
+</section>
+<main id="results" hidden>
+  <h1 id="score"></h1>
+  <div id="teams"></div>
+  <ul id="recap"></ul>
+  <button id="again" class="big">Play again</button>
+  <button id="back" class="big alt">Pick another deck</button>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

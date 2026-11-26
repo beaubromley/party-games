@@ -3,36 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#1b1446">
+<meta name="theme-color" content="#f4efe3">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Forehead">
+<meta name="apple-mobile-web-app-title" content="Party Games">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="stylesheet" href="/style.css">
-<title>Forehead</title>
+<title>Party Games</title>
 </head>
 <body>
-<main id="home">
-  <h1>Forehead</h1>
-  <p>Hold the phone to your forehead. Friends give clues.<br><b>Tilt down</b> = got it. <b>Tilt up</b> = pass.</p>
-  <div id="times" role="group" aria-label="Round length">
-    <button data-s="60" class="on">60s</button><button data-s="90">90s</button><button data-s="120">2 min</button>
-  </div>
-  <div id="decks">Loading decks…</div>
-  <footer>Topic decks from <a href="https://www.wikidata.org">Wikidata</a> (CC0). Others written for this app. Family friendly, ages 10+.</footer>
+<main class="menu">
+  <h1>Party Games</h1>
+  <p>For ages 10 and up</p>
+  <a href="/forehead.html">Forehead<small>One phone. Guess the word from clues.</small></a>
+  <a href="/draw.html">Quick Draw<small>One phone. Draw it, everyone shouts guesses.</small></a>
+  <a href="/play.html?game=bluff">Bluff<small>3–8 phones. Fake answers to real trivia.</small></a>
+  <a href="/play.html?game=doodle">Doodle Bluff<small>3–8 phones. Draw, then fool each other with titles.</small></a>
+  <p id="install" hidden>For full screen with no Safari bar: tap Share, then <b>Add to Home Screen</b>, and open it from the new icon. Joining a friend's game there? Type the room code.</p>
 </main>
-<section id="stage" hidden>
-  <button id="quit" aria-label="Quit">✕</button>
-  <div id="clock"></div>
-  <div id="card" aria-live="polite"></div>
-  <div id="controls"><button id="pass">Pass</button><button id="got">Got it</button></div>
-</section>
-<main id="results" hidden>
-  <h1 id="score"></h1>
-  <ul id="recap"></ul>
-  <button id="again" class="big">Play again</button>
-  <button id="back" class="big alt">Pick another deck</button>
-</main>
-<script type="module" src="/app.js"></script>
+<script>
+document.getElementById('install').hidden = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+</script>
+<script>navigator.serviceWorker?.register('/sw.js');</script>
 </body>
 </html>

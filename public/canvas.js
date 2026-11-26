@@ -1,0 +1,51 @@
+// Drawings are lists of strokes: [colorIndex, width, [x0, y0, x1, y1, ...]] on a 1000x1000 grid.
+import { el } from './ui.js';
+export const COLORS = ['#111111', '#e5383b', '#2b5cff', '#14a44d', '#ffb703', '#8b5a2b', '#ffffff'];
+export const MAX_POINTS = 6000;
+
+function paint(ctx, [color, width, p]) {
+  ctx.strokeStyle = COLORS[color]; ctx.lineWidth = width; ctx.lineCap = ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(p[0], p[1]);
+  if (p.length === 2) ctx.lineTo(p[0] + 0.1, p[1]);
+  for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
+  ctx.stroke();
+}
+export function picture(strokes) {
+  const c = el('canvas', { width: 1000, height: 1000 });
+  for (const s of strokes) paint(c.getContext('2d'), s);
+  return c;
+}
+export function sketchpad() {
+  const canvas = el('canvas', { width: 1000, height: 1000, className: 'pad' });
+  const ctx = canvas.getContext('2d');
+  let strokes = [], color = 0, live = null, points = 0;
+  const redraw = () => { ctx.clearRect(0, 0, 1000, 1000); strokes.forEach(s => paint(ctx, s)); points = strokes.reduce((n, s) => n + s[2].length / 2, 0); };
+  const at = e => {
+    const r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top].map((v, i) => Math.max(0, Math.min(1000, Math.round(v / (i ? r.height : r.width) * 1000))));
+  };
+  canvas.onpointerdown = e => {
+    if (live || points >= MAX_POINTS) return; // one finger at a time
+    canvas.setPointerCapture(e.pointerId);
+    live = { id: e.pointerId, stroke: [color, color === 6 ? 60 : 12, at(e)] };
+    strokes.push(live.stroke); points++; paint(ctx, live.stroke);
+  };
+  canvas.onpointermove = e => {
+    if (live?.id !== e.pointerId || points >= MAX_POINTS) return;
+    const p = live.stroke[2], [x, y] = at(e);
+    if (Math.hypot(x - p.at(-2), y - p.at(-1)) < 5) return;
+    paint(ctx, [live.stroke[0], live.stroke[1], [p.at(-2), p.at(-1), x, y]]);
+    p.push(x, y); points++;
+  };
+  canvas.onpointerup = canvas.onpointercancel = e => { if (live?.id === e.pointerId) live = null; };
+  const tools = el('div', { className: 'tools' });
+  const swatches = COLORS.map((c, i) => el('button', {
+    type: 'button', className: 'swatch' + (i ? '' : ' on'), textContent: i === 6 ? 'Erase' : '', ariaLabel: i === 6 ? 'Eraser' : `Color ${i + 1}`,
+    onclick: () => { color = i; swatches.forEach((s, j) => s.classList.toggle('on', i === j)); },
+  }));
+  swatches.forEach((s, i) => { s.style.background = COLORS[i]; });
+  tools.append(...swatches,
+    el('button', { type: 'button', onclick: () => { strokes.pop(); live = null; redraw(); } }, 'Undo'),
+    el('button', { type: 'button', onclick: () => { strokes = []; live = null; redraw(); } }, 'Clear'));
+  return { nodes: [canvas, tools], strokes: () => strokes };
+}

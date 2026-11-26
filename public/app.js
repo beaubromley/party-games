@@ -1,10 +1,15 @@
-import { tiltDetector, shuffle } from './game.js';
+import { tiltDetector, shuffle, roundSeconds } from './game.js';
+import { scoreboard } from './teams.js';
 
 const $ = id => document.getElementById(id);
 const piles = {};            // unused cards per deck, so rounds don't repeat
 let seconds = 60, deck, history, current, timer, phase = 'idle', detect, audio, lock;
 
-function show(id) { for (const s of ['home', 'stage', 'results']) $(s).hidden = s !== id; scrollTo(0, 0); }
+function show(id) {
+  for (const s of ['home', 'stage', 'results']) $(s).hidden = s !== id;
+  if (id === 'home') $('homeTeams').replaceChildren(scoreboard());
+  scrollTo(0, 0);
+}
 
 function beep(freq, dur = 0.15) {
   if (!audio) return;
@@ -80,7 +85,9 @@ function stop() {
 function finish() {
   if (current) history.push({ card: current, result: 'pass' });
   stop(); beep(180, 0.8);
-  $('score').textContent = `${history.filter(h => h.result === 'got').length} correct`;
+  const correct = history.filter(h => h.result === 'got').length;
+  $('score').textContent = `${correct} correct`;
+  $('teams').replaceChildren(scoreboard(correct));
   $('recap').replaceChildren(...history.map(h => {
     const li = document.createElement('li');
     li.textContent = h.card; if (h.result === 'pass') li.className = 'skipped';
@@ -94,21 +101,37 @@ $('pass').onclick = () => answer('pass');
 $('quit').onclick = () => { stop(); show('home'); };
 $('again').onclick = () => start(deck);
 $('back').onclick = () => show('home');
+function pickTime(value, chosen) {
+  seconds = value;
+  for (const b of $('times').querySelectorAll('button')) b.classList.toggle('on', b === chosen);
+  try { localStorage.setItem('seconds', value); } catch {}
+}
 $('times').onclick = e => {
   if (!e.target.dataset.s) return;
-  seconds = Number(e.target.dataset.s);
-  for (const b of $('times').children) b.classList.toggle('on', b === e.target);
+  $('custom').value = '';
+  pickTime(Number(e.target.dataset.s), e.target);
 };
+$('custom').oninput = () => { const n = roundSeconds($('custom').value); if (n) pickTime(n, null); };
+$('custom').onchange = () => { if ($('custom').value) $('custom').value = seconds; };
+try {
+  const saved = roundSeconds(localStorage.getItem('seconds'));
+  if (saved) {
+    const preset = $('times').querySelector(`[data-s="${saved}"]`);
+    if (!preset) $('custom').value = saved;
+    pickTime(saved, preset);
+  }
+} catch {}
+$('homeTeams').replaceChildren(scoreboard());
 // A locked or backgrounded phone ends the round rather than silently burning the clock.
 document.addEventListener('visibilitychange', () => { if (document.hidden && phase !== 'idle') { stop(); show('home'); } });
 
 try {
   const decks = await (await fetch('/decks.json')).json();
-  $('decks').replaceChildren(...decks.map(d => {
-    const b = document.createElement('button'), icon = document.createElement('span');
-    icon.textContent = d.emoji; b.append(icon, d.name); b.onclick = () => start(d);
-    return b;
-  }));
+  const groups = Map.groupBy ? Map.groupBy(decks, d => d.group) : decks.reduce((m, d) => m.set(d.group, [...(m.get(d.group) ?? []), d]), new Map());
+  $('decks').replaceChildren(...[...groups].flatMap(([group, list]) => [
+    Object.assign(document.createElement('h2'), { textContent: group }),
+    ...list.map(d => Object.assign(document.createElement('button'), { textContent: d.name, onclick: () => start(d) })),
+  ]));
 } catch { $('decks').textContent = "Couldn't load decks. Check your connection and reload."; }
 
 navigator.serviceWorker?.register('/sw.js');
