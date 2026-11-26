@@ -63,3 +63,8 @@ canvas.pad { width: min(100%, 58dvh); }
 .team .award { width: 100%; background: var(--gold); margin-bottom: 8px; }
 .adjust { display: flex; gap: 8px; } .adjust button { flex: 1; }
 .teams .reset { grid-column: 1 / -1; background: transparent; }
+.face { width: 40px; height: 40px; object-fit: cover; border: 2px solid var(--ink); border-radius: 50%; vertical-align: middle; margin-right: 8px; }
+.face.large { width: min(60vw, 220px); height: min(60vw, 220px); border-width: 4px; margin: 10px 4px 0; }
+.bluffed { text-align: center; background: var(--gold); border: 2px solid var(--ink); padding: 12px; margin-bottom: 12px; }
+.bluffed h2 { margin: 0; font-size: 28px; }
+.fine { font-size: 12px; opacity: .7; margin-top: 6px; }

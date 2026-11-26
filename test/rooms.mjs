@@ -71,6 +71,16 @@ for (const topic of ['bible', 'words', 'about']) {
 }
 assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
 
+// Two players are enough, one is not.
+{
+  const h = await handle(query, { action: 'create', game: 'bluff', name: 'A' });
+  const a = { code: h.code, playerId: h.playerId, secret: h.secret };
+  await assert.rejects(handle(query, { action: 'start', ...a, step: 0, topic: 'bible' }), /at least 2/);
+  await handle(query, { action: 'join', code: h.code, name: 'B' });
+  assert.equal((await handle(query, { action: 'start', ...a, step: 0, topic: 'bible', rounds: 3 })).state.phase, 'writing');
+  await assert.rejects(handle(query, { action: 'face', ...a, data: 'javascript:alert(1)' }), /didn't work/);
+  await assert.rejects(handle(query, { action: 'faces', ...a, secret: 'no' }), /not in this room/);
+}
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
@@ -105,6 +115,11 @@ for (const game of ['bluff', 'doodle']) {
     await g.goto(`${base}/play.html?game=${game}&code=${code}`);
     await g.getByPlaceholder('Your name').fill(['Bo', 'Cy'][i]); await click(g, 'Join room');
   }
+  if (game === 'bluff') {
+    for (const p of phones) await p.locator('#face').setInputFiles(new URL('../public/icon-180.png', import.meta.url).pathname);
+    for (const p of phones) await p.waitForFunction(() => document.querySelectorAll('li img.face').length === 3, null, { timeout: 8000 });
+    await host.screenshot({ path: '/tmp/lobby.png', fullPage: true });
+  }
   await click(host, game === 'bluff' ? 'Start: 3 questions' : 'Start drawing');
   if (game === 'doodle') for (const p of phones) { await p.locator('canvas.pad').waitFor(); await scribble(p); if (p === host) await host.screenshot({ path: '/tmp/doodle.png', fullPage: true }); await click(p, 'Send drawing'); }
   for (let round = 0; round < 3; round++) {
@@ -122,6 +137,14 @@ for (const game of ['bluff', 'doodle']) {
     for (const p of writers) {
       await p.getByText('Which one is real?').waitFor({ timeout: 8000 });
       await p.locator('button.big:not(.alt):enabled').first().click();
+    }
+    if (game === 'bluff' && round === 0) {
+      let seen = false;
+      for (const p of phones) {
+        await p.getByText(/REAL:/).waitFor({ timeout: 8000 });
+        if (await p.locator('.bluffed').count()) { await p.locator('.bluffed img').first().waitFor({ timeout: 8000 }); await p.screenshot({ path: '/tmp/bluffed.png' }); seen = true; }
+      }
+      assert.ok(seen, 'someone sees the face of whoever fooled them');
     }
     await host.getByText(/REAL:/).waitFor({ timeout: 8000 });
     if (round === 0) await host.screenshot({ path: `/tmp/${game}-reveal.png`, fullPage: true });

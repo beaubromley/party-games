@@ -6,8 +6,8 @@ Family party games for iPhone (ages 10+), on Vercel. No npm dependencies.
 |---|---|---|
 | Forehead | 1 | none |
 | Quick Draw | 1 | none |
-| Bluff | 3-12 | Turso |
-| Doodle Bluff | 3-12 | Turso |
+| Bluff | 2-12 | Turso |
+| Doodle Bluff | 2-12 | Turso |
 
 - `lib/rules.js` game rules, `lib/rooms.js` room storage, `api/` Vercel functions.
 - Needs `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
