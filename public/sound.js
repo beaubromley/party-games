@@ -27,6 +27,7 @@ function tone(freq, at, length, type = 'triangle', volume = 0.18) {
 }
 const EFFECTS = {
   turn: at => { tone(523, at, 0.12); tone(784, at + 0.1, 0.2); },
+  poke: at => { [0, 0.16, 0.32].forEach(t => tone(740, at + t, 0.1, 'square', 0.12)); },
   ding: at => tone(988, at, 0.35, 'sine'),
   tick: at => tone(660, at, 0.07, 'square', 0.08),
   buzz: at => tone(150, at, 0.6, 'sawtooth', 0.15),

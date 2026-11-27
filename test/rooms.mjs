@@ -630,6 +630,47 @@ const deals = {
     await handle(query, { action: 'join', code: h.code, name: 'E' });
   }
 }
+// Pokes: only from finished players, only to those still going, private, and gone once the screen changes.
+{
+  const r = room('faceoff', 3);
+  rules.start(r, { sets: 1, prompts: ['a', 'b', 'c'] });
+  assert.throws(() => rules.poke(r, 'p0', 'p1', ''), /your own turn/);
+  assert.equal(rules.view(r, 'p0').nudge, undefined);
+  for (let k = 0; k < 2; k++) rules.submitFake(r, 'p0', 'x' + k, rules.view(r, 'p0').item);
+  assert.deepEqual(rules.view(r, 'p0').nudge.map(t => t.id), ['p1', 'p2']);
+  rules.poke(r, 'p0', 'p1', '  Hurry   up ', 1000);
+  assert.deepEqual(rules.view(r, 'p1').pokes, [{ n: 1, from: 'P0', text: 'Hurry up' }]);
+  assert.deepEqual(rules.view(r, 'p2').pokes, []);
+  assert.throws(() => rules.poke(r, 'p0', 'p1', '', 2000), /few seconds/);
+  rules.poke(r, 'p0', 'all', 'y'.repeat(90), 3000);
+  assert.equal(rules.view(r, 'p2').pokes[0].text.length, 60);
+  assert.equal(rules.view(r, 'p1').pokes.length, 1, 'cooling down');
+  rules.poke(r, 'p0', 'p1', '', 7000);
+  assert.equal(rules.view(r, 'p1').pokes.length, 2);
+  assert.throws(() => rules.poke(r, 'p0', 'p0', '', 20000), /done now/);
+  for (let g = 0; g < 100; g++) rules.poke(r, 'p0', 'all', '', 30000 + g * 6000);
+  assert.ok(r.pokes.length <= 40);
+  rules.advance(r);
+  assert.deepEqual(rules.view(r, 'p1').pokes ?? [], [], 'old pokes vanish');
+  while (r.phase !== 'reveal') rules.advance(r);
+  assert.throws(() => rules.poke(r, 'p0', 'all', ''), /your own turn/);
+  const s = room('snack', 5);
+  rules.start(s, {});
+  move(s, 'p0');
+  assert.equal(rules.view(s, 'p0').canNote, false);
+  assert.throws(() => rules.poke(s, 'p0', 'all', 'psst it is Bo'), /just pokes/);
+  rules.poke(s, 'p0', 'all', '');
+  s.alive = s.alive.filter(id => id !== 'p0');
+  assert.throws(() => rules.poke(s, 'p0', 'all', ''), /your own turn/);
+  const h = await handle(query, { action: 'create', game: 'majority', name: 'A' });
+  const j = await handle(query, { action: 'join', code: h.code, name: 'B' });
+  const [a, b] = [h, j].map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
+  const go = await handle(query, { action: 'start', ...a, step: 0 });
+  await handle(query, { action: 'fake', ...a, step: go.state.step, text: 'cake' });
+  await assert.rejects(handle(query, { action: 'poke', ...a, secret: 'no', to: 'all' }), /not in this room/);
+  await handle(query, { action: 'poke', ...a, to: 'all', text: 'go' });
+  assert.equal((await handle(query, { action: 'poll', ...b })).state.pokes[0].from, 'A');
+}
 // Likes: toggled on results, not your own, no points, and counted for an award.
 {
   const m = room('majority', 4);
@@ -1108,6 +1149,40 @@ for (const game of ['rap', 'oddone', 'split', 'whosaid', 'snack', 'survival']) {
   assert.ok(!(await host.locator('main').textContent()).includes('undefined'));
   for (const p of phones) await p.context().close();
   console.log(`${game}: full game passed on 4 browsers`);
+}
+// Pokes in the browser: the note arrives without wiping what the other person is typing.
+{
+  const phones = [await phone(), await phone(), await phone()];
+  const [host, bo, cy] = phones;
+  await host.goto(`${base}/play.html?game=majority`);
+  await host.getByPlaceholder('Your name').fill('Ann'); await click(host, 'Create a room');
+  const code = (await host.locator('.code').textContent()).trim();
+  for (const [p, name] of [[bo, 'Bo'], [cy, 'Cy']]) { await p.goto(`${base}/play.html?game=majority&code=${code}`); await p.getByPlaceholder('Your name').fill(name); await click(p, 'Join room'); }
+  await host.locator('#recap li').nth(2).waitFor({ timeout: 8000 });
+  await click(host, 'Start: 5 questions');
+  await bo.locator('input').fill('half typed');
+  assert.equal(await bo.locator('.nudge:visible').count(), 0, 'no pestering before you finish');
+  await host.locator('input').fill('cake'); await click(host, 'Send');
+  await host.locator('.nudge').waitFor({ timeout: 8000 });
+  await click(host, 'Bo'); await click(host, 'Write a note');
+  const box = host.getByPlaceholder('Your note');
+  await box.fill('Any day now, Bo');
+  await cy.locator('input').fill('pie'); await click(cy, 'Send'); // the list changes while Ann types
+  await host.locator('.nudge').getByRole('button', { name: 'Cy', exact: true }).waitFor({ state: 'detached', timeout: 8000 });
+  assert.equal(await box.inputValue(), 'Any day now, Bo');
+  assert.ok(await box.evaluate(n => n === document.activeElement), 'still typing');
+  await host.screenshot({ path: '/tmp/nudge.png', fullPage: true });
+  await click(host, 'Send note'); await host.getByText('Sent to Bo.').waitFor({ timeout: 8000 });
+  await bo.locator('.popup').getByText('Any day now, Bo').waitFor({ timeout: 8000 });
+  await bo.waitForTimeout(800); await bo.screenshot({ path: '/tmp/popup.png' });
+  assert.equal(await bo.locator('input').inputValue(), 'half typed');
+  await bo.locator('.popup').click(); assert.equal(await bo.locator('.popup').count(), 0);
+  await click(cy, 'Poke'); await bo.getByText('Cy poked you!').waitFor({ timeout: 8000 });
+  await bo.locator('input').fill('cake'); await click(bo, 'Send'); await host.locator('.answer.winner').waitFor({ timeout: 8000 });
+  await bo.locator('.popup').waitFor({ state: 'detached', timeout: 8000 });
+  await host.locator('.nudge').waitFor({ state: 'hidden' });
+  for (const p of phones) await p.context().close();
+  console.log('pokes: passed');
 }
 const solo = await phone();
 await solo.goto(`${base}/draw.html`);
