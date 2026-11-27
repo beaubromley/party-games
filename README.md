@@ -23,7 +23,7 @@ Family party games for iPhone (ages 10+), on Vercel. No npm dependencies.
 - `lib/rules.js` game rules, `lib/rooms.js` room storage, `api/` Vercel functions.
 - Needs `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
 - `npm run build` writes the decks (Wikidata, CC0) and imports questions (Open Trivia DB, CC BY-SA 4.0).
-- `npm test` needs Playwright; it uses an in-memory SQLite in place of Turso.
+- `npm test` runs everything (browser groups side by side; needs Playwright). `npm run test:quick` checks just the rules, and `npm test -- tv` runs the rules plus one group. SQLite stands in for Turso.
 - `/api/health` checks the database.
 - Quick Draw can be watched live on other phones (Quick Draw, then Watch a drawing).
 - AI help in Bluff and Face-Off calls Claude Haiku with `ANTHROPIC_API_KEY`, capped at 300 requests a day.

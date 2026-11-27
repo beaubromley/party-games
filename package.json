@@ -1,2 +1,2 @@
 { "name": "party-games", "private": true, "type": "module",
-  "scripts": { "build": "node scripts/build-decks.mjs && node scripts/import-questions.mjs \u0026\u0026 node scripts/check-ai.mjs", "test": "node test/smoke.mjs && node test/rooms.mjs" } }
+  "scripts": { "build": "node scripts/build-decks.mjs && node scripts/import-questions.mjs \u0026\u0026 node scripts/check-ai.mjs", "test": "node test/run.mjs", "test:quick": "node test/run.mjs --quick" } }
