@@ -18,6 +18,8 @@ Family party games for iPhone (ages 10+), on Vercel. No npm dependencies.
 | Midnight Snack | 4-12 | Turso |
 | Last One Standing | 2-12 | Turso |
 
+`/tv.html` is a watch-only screen for a TV in the room: enter the room code.
+
 - `lib/rules.js` game rules, `lib/rooms.js` room storage, `api/` Vercel functions.
 - Needs `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.
 - `npm run build` writes the decks (Wikidata, CC0) and imports questions (Open Trivia DB, CC BY-SA 4.0).

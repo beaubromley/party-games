@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { migrate } from '../lib/db.js';
 import { handle } from '../lib/rooms.js';
 import * as rules from '../lib/rules.js';
+import { screen } from '../lib/screen.js';
 import { suitable } from '../scripts/filter.mjs';
 
 assert.equal(suitable({ question: 'Which of these is a fish?', correct_answer: 'Cod' }), false);
@@ -262,6 +263,14 @@ const deals = {
       } else act(r, random);
       // Nobody may be left staring at a screen that waits for no one.
       if (['writing', 'drawing', 'voting'].includes(r.phase)) assert.ok(rules.waitingOn(r).length, `idle in ${r.phase}: ${log}`);
+      // The TV never gets anything private.
+      const tv = screen(r), flat = JSON.stringify(tv);
+      assert.ok(!/"(secret|you|mine|nudge|hint|role|roleId|peeks|partners|prompt_|faking|clue|bluffedBy|sittingOut|starters|prev)":/.test(flat), `TV leak: ${log} ${flat.slice(0, 300)}`);
+      if (r.phase !== 'reveal' && r.phase !== 'done') assert.ok(!/"(truth|voters|authorIds|authorId_|faker|fakerId|cast|entries)":/.test(flat), `TV spoils: ${log} ${r.phase}`);
+      if (r.phase !== 'done') assert.ok(!('cast' in tv) && !/Pie Thief|Watchdog/.test(r.phase === 'reveal' ? '' : flat), log);
+      if (game === 'oddone' && r.phase === 'writing') assert.ok(!flat.includes(r.prompts[r.index].split('|')[0]), 'TV shows the faker the prompt');
+      if (r.phase === 'drawing') assert.ok(!('question' in tv) && !flat.includes('prompt '), log);
+      if (r.phase === 'voting' && game === 'whosaid') assert.ok(tv.answers.every(a => !('author' in a)));
       for (const p of r.players) {
         const v = rules.view(r, p.id);
         assert.ok(!JSON.stringify(v).includes('undefined'), log);
@@ -977,7 +986,7 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   if (game === 'faceoff') {
     await click(host, 'Larger text: off'); await host.waitForTimeout(3500);
     await host.screenshot({ path: '/tmp/large.png', fullPage: true });
-    const wide = await host.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    const wide = await host.evaluate(() => { scrollTo(500, scrollY); const x = scrollX; scrollTo(0, scrollY); return x; });
     assert.ok(wide <= 0, 'larger text fits the screen');
     await click(host, 'Larger text: on');
   }
@@ -1184,6 +1193,59 @@ for (const game of ['rap', 'oddone', 'split', 'whosaid', 'snack', 'survival']) {
   for (const p of phones) await p.context().close();
   console.log('pokes: passed');
 }
+// The TV page through every kind of screen, in every game.
+{
+  const tv = await (await browser.newContext({ viewport: { width: 1920, height: 1080 }, reducedMotion: 'reduce' })).newPage();
+  tv.on('pageerror', e => errors.push('tv: ' + e.message));
+  await tv.goto(`${base}/tv.html`);
+  await tv.getByPlaceholder('Room code').fill('QQQQ'); await click(tv, 'Show this party');
+  await tv.getByText('No party has that code.').waitFor({ timeout: 8000 });
+  const names = ['Ann', 'Bo', 'Cy', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jo', 'Kit', 'Lou'];
+  let seed = 11;
+  const random = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  const more = { bluff: [{ question: 'Which planet is closest to the sun?', answer: 'Mercury' }, { question: 'What do bees make?', answer: 'Honey' }], doodle: names.map(n => `a ${n} sandwich`),
+    faceoff: { sets: 1, prompts: names.map(n => `A bad name for ${n}'s boat`) }, majority: { prompts: ['Name a pizza topping'] }, telephone: {} };
+  const line = [[0, 12, [100, 100, 800, 700, 200, 800]]];
+  for (const game of rules.GAMES) {
+    const n = game === 'telephone' ? 4 : 12;
+    const r = rules.newRoom(game);
+    names.slice(0, n).forEach((name, i) => rules.join(r, { id: 'p' + i, secret: 's', name }));
+    const code = 'TV' + String(rules.GAMES.indexOf(game) + 10);
+    let v = 0;
+    const save = () => sqlite.prepare('INSERT OR REPLACE INTO rooms (code, version, state, updated) VALUES (?, ?, ?, ?)').run(code, ++v, JSON.stringify(r), Date.now());
+    const seen = new Set();
+    const look = async () => {
+      const label = r.phase + (r.stage && game === 'survival' ? r.stage : game === 'snack' ? r.news?.stage ?? '' : '');
+      if (seen.has(label)) return;
+      seen.add(label); save();
+      await tv.waitForTimeout(2300); // one poll
+      const text = await tv.locator('main').textContent();
+      assert.ok(!/undefined|NaN|\[object/.test(text), `${game} ${label}: ${text}`);
+      const spill = await tv.evaluate(() => { const room = document.querySelector('.room').getBoundingClientRect(), fit = document.querySelector('.fit').getBoundingClientRect(); return [fit.bottom - room.bottom, fit.right - room.right]; });
+      assert.ok(spill.every(x => x < 8), `${game} ${label} does not fit: ${spill}`);
+      await tv.screenshot({ path: `/tmp/tv-${game}-${label}.png` });
+    };
+    save();
+    if (await tv.getByRole('button', { name: 'Change room' }).count()) await click(tv, 'Change room');
+    await tv.getByPlaceholder('Room code').fill(code.toLowerCase()); await click(tv, 'Show this party');
+    await look();
+    rules.start(r, deals[game]?.(n) ?? more[game]);
+    for (let g = 0; ; g++) {
+      assert.ok(g < 2000, game);
+      await look();
+      if (r.phase === 'done') break;
+      const waiting = rules.waitingOn(r);
+      if (!waiting.length) { rules.advance(r, random); continue; }
+      // Leave the last person slow, so there is someone to pester on screen.
+      if (r.phase === 'writing' && waiting.length === 1 && !r.pokes?.length) { rules.poke(r, r.players.find(p => !waiting.includes(p.id) && (game !== 'snack' || r.alive.includes(p.id)))?.id, 'all', game === 'snack' ? '' : 'Any day now!'); save(); await tv.getByText('Pokes and notes').waitFor({ timeout: 8000 }); assert.ok(await tv.evaluate(() => document.querySelector('.feed li').getBoundingClientRect().bottom <= innerHeight), `${game}: pokes off screen`); await tv.screenshot({ path: `/tmp/tv-${game}-poke.png` }); }
+      const id = waiting[0];
+      move(r, id, random, line, ['Soda', 'a very silly answer that is quite long indeed ok', 'Tacos', 'Grandma'][g % 4] + (game === 'majority' ? '' : ' ' + g));
+    }
+    console.log(`tv: ${game} showed ${[...seen].join(', ')}`);
+  }
+  await tv.reload(); assert.equal(await tv.getByPlaceholder('Room code').inputValue(), 'TV20');
+  await tv.context().close();
+}
 const solo = await phone();
 await solo.goto(`${base}/draw.html`);
 // The scoreboard starts at last round's totals and order, then climbs.
@@ -1198,6 +1260,15 @@ assert.deepEqual(await rows(), ['Ann: 1500', 'Bo: 500 (+1500)']);
 await solo.waitForTimeout(2600);
 assert.deepEqual(await rows(), ['Bo: 2000 (+1500)', 'Ann: 1500']);
 await solo.locator('#probe').evaluate(n => n.remove());
+// A two-place podium puts the winner off to one side; its sunburst must not widen the page.
+await solo.evaluate(async () => {
+  const { podium } = await import('/ui.js');
+  const board = podium([{ name: 'Ann', score: 1000 }, { name: 'Cy', score: 1000 }, { name: 'Bo', score: 500 }], Date.now() - 20000);
+  board.id = 'tie'; document.querySelector('main').append(board);
+});
+await solo.waitForTimeout(300);
+assert.equal(await solo.evaluate(() => { scrollTo(500, 0); return scrollX; }), 0, 'no sideways scrolling');
+await solo.locator('#tie').evaluate(n => n.remove());
 // Pull to refresh, as the Home Screen app.
 {
   const p = await phone();

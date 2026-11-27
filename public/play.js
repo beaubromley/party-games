@@ -356,6 +356,8 @@ function render() {
     nodes.push(el('h1', {}, title()),
       fold('how', 'How to play', PARTY_GAMES[game] && el('p', {}, PARTY_GAMES[game].blurb), el('ol', { className: 'how' }, HOW_TO[game].map(line => el('li', {}, line)))),
       ...invite(),
+      fold('tv', 'Show it on a TV', el('p', {}, `On a laptop, iPad or smart TV browser, open ${location.host}/tv.html and enter ${me.code}. A spare phone mirrored to the TV works too.`),
+        el('p', { className: 'fine' }, 'That screen only watches. Keep playing on your phones.')),
       el('ul', { id: 'recap' }, s.players.map(p => el('li', {}, faceImg(p.id), p.name))), topicPicker(host));
     const least = PARTY_GAMES[game]?.min ?? 2;
     if (host && s.players.length >= least) nodes.push(...startButtons());

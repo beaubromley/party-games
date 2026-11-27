@@ -15,7 +15,8 @@ export function nudger(send) {
   const actions = el('div', { className: 'chips quick' });
   const compose = el('div');
   const status = el('p', { className: 'fine', role: 'status' });
-  panel.append(el('h2', {}, 'Pester the slowpokes'), names, actions, compose, status);
+  panel.append(el('h2', {}, 'Pester the slowpokes'), names, actions, compose, status,
+    el('p', { className: 'fine' }, 'If a TV screen is connected, it shows pokes and notes too.'));
 
   async function fire(message) {
     const who = to === 'all' ? 'everyone still going' : targets.find(t => t.id === to)?.name;

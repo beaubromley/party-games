@@ -1,0 +1,59 @@
+/* The room screen: sized from the screen itself, readable from the couch. */
+.tv { font-size: clamp(14px, 1.15vw + 0.5vh, 40px); }
+.tv main { max-width: none; margin: 0; }
+.tv main.join { max-width: 520px; margin: auto; font-size: 18px; }
+.tv main.join form { margin-top: 16px; }
+.tv main.join .link { display: inline-block; margin-top: 16px; }
+.tv main.live { display: flex; flex-direction: column; height: 100dvh; padding: 1.2em 1.6em; gap: 0.8em; overflow: hidden; }
+.tv .wait { margin: auto; font-size: 2em; }
+.tv header { display: flex; align-items: center; gap: 1.5em; border-bottom: 0.2em solid var(--ink); padding-bottom: 0.6em; }
+.tv header h1 { font-size: 2.4em; border: 0; margin: 0; padding: 0; }
+.tv header > div:first-child { margin-right: auto; }
+.tv header p { font-size: 1.1em; }
+.tv .clock { font-family: var(--display); font-size: 3em; font-weight: 800; }
+.tv .clock.low { color: var(--red); }
+.tv .joinat { text-align: right; }
+.tv .joinat .code { font-size: 2.4em; line-height: 1; margin: 0; }
+.tv .tools { display: grid; gap: 0.3em; }
+.tv .tools button { font: inherit; font-size: max(12px, 0.7em); padding: 0.4em 0.8em; background: transparent; border: 2px solid var(--ink); border-radius: 4px; color: var(--ink); }
+.tv .middle { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 20em; gap: 1.6em; }
+.tv .room { min-height: 0; overflow: hidden; }
+.tv .fit { display: flow-root; transform-origin: top left; text-align: center; }
+.tv .question { font-size: 2.6em; line-height: 1.15; margin: 0.2em 0 0.5em; }
+.tv .lead { font-size: 1.5em; margin: 0.5em 0; }
+.tv .fit h2 { font-size: 1.8em; }
+.tv .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14em, 1fr)); gap: 0.8em; align-items: stretch; margin-top: 0.6em; }
+.tv .answer { margin: 0.4em 0; padding: 0.8em; }
+.tv .grid .answer { margin: 0; }
+.tv .answer b { font-size: 1.6em; display: block; overflow-wrap: anywhere; }
+.tv .answer p { font-size: 1.1em; }
+.tv .answer .fine { font-size: 0.9em; }
+.tv .answer b.verse { font-size: 1.35em; }
+.tv .fit > canvas { width: min(100%, 42vh); height: auto; display: block; margin: 0 auto 0.5em; background: #fff; border: 3px solid var(--ink); border-radius: 4px; }
+.tv .answer canvas { width: min(100%, 30vh); height: auto; display: block; margin: 0 auto 0.4em; background: #fff; }
+.tv .code.huge { font-size: 9em; line-height: 1.1; margin: 0; }
+.tv .names { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5em; font-size: 1.8em; }
+.tv .names span { border: 2px solid var(--ink); border-radius: 2em; padding: 0.2em 0.8em; background: #fffaf0; }
+.tv .podium { max-width: 30em; margin: 0 auto; font-size: 1.3em; }
+.tv aside { min-height: 0; overflow: hidden; border-left: 2px solid var(--ink); padding-left: 1.2em; }
+.tv aside h2 { font-size: 1.3em; margin: 0.4em 0; }
+.tv aside #recap li, .tv aside .night li { font-size: 1.25em; padding: 0.25em 0; }
+.tv .feed { list-style: none; padding: 0; }
+.tv .feed li { margin-top: 0.4em; padding: 0.4em 0.6em; background: var(--gold); border-radius: 4px; overflow-wrap: anywhere; }
+.tv footer { display: flex; align-items: center; gap: 1em; min-height: 2.4em; font-size: 1.1em; text-align: left; margin: 0; }
+.tv footer .who-done { margin: 0; }
+.tv footer .who-done span { font-size: 1em; }
+.tv .bubbles p { font-size: 2em; }
+/* A device held upright stacks the scores under the game. */
+@media (orientation: portrait) {
+  .tv { font-size: clamp(12px, 2vw, 28px); }
+  .tv header { flex-wrap: wrap; gap: 0.8em; }
+  .tv .middle { grid-template-columns: 1fr; grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+  .tv aside { border-left: 0; border-top: 2px solid var(--ink); padding-left: 0; }
+}
+/* A full house: tighter scores, and ties and role lists spread sideways instead of down. */
+.tv aside .crowded #recap li, .tv aside .crowded .night li { font-size: 1em; padding: 0.08em 0; }
+.tv .podium .winners { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 0 0.7em; }
+.tv .podium .place { flex: 1; }
+.tv .cast p { display: inline-block; margin: 0 0.6em; }
+.tv .podium .who b { font-size: 1.1rem; }

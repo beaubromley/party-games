@@ -95,7 +95,8 @@ h2 { margin-bottom: 4px; }
 .place3 .block { height: 80px; background: #d19a6a; }
 /* A light sweeps across the winning step. */
 .place1 .block::after { content: ''; position: absolute; top: 0; bottom: 0; width: 40px; left: -60px; background: #ffffff80; transform: skewX(-20deg); animation: shine 3.2s 2.8s ease-in-out infinite; }
-/* Slow sunburst behind the winner, like the app icon. */
+/* Slow sunburst behind the winner, like the app icon. With only two places it sits off-center, so trim it at the page edge. */
+main { overflow-x: clip; }
 .place1::before { content: ''; position: absolute; z-index: -1; left: 50%; top: 80px; width: 280px; height: 280px; margin: -140px; border-radius: 50%;
   background: repeating-conic-gradient(#e0a52659 0 10deg, transparent 10deg 30deg);
   -webkit-mask: radial-gradient(closest-side, #000 35%, transparent); mask: radial-gradient(closest-side, #000 35%, transparent);
@@ -225,3 +226,4 @@ button.big.verse { text-align: left; line-height: 1.5; font-size: 17px; }
 .popup small { display: block; margin-top: 6px; }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-12px) rotate(-1deg); } 40%, 80% { transform: translateX(12px) rotate(1deg); } }
 @media (prefers-reduced-motion: reduce) { .popup { animation: none; } }
+.menu a.tvlink { background: transparent; color: var(--ink); border: 3px solid var(--ink); }
