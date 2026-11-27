@@ -11,3 +11,20 @@ export async function shrink(file, size = 240) {
     return c.toDataURL('image/jpeg', 0.7);
   } finally { URL.revokeObjectURL(url); }
 }
+
+export const FACE_DAYS = 30;
+// A copy stays on this phone so it can be added to the next room automatically.
+export function saveFace(data) {
+  try {
+    if (data) localStorage.setItem('face', JSON.stringify({ data, expires: Date.now() + FACE_DAYS * 86400000 }));
+    else localStorage.removeItem('face');
+  } catch {}
+}
+export function savedFace() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('face'));
+    if (saved?.expires > Date.now()) return saved.data;
+    if (saved) localStorage.removeItem('face');
+  } catch {}
+  return '';
+}

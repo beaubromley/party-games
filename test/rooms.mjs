@@ -108,7 +108,14 @@ const ask = async () => 'A hootenanny';
   assert.equal(done.state.players[0].score, 250);
 }
 {
-  const { BIBLE } = await import('../lib/modes.js');
+  const { BIBLE, WORDS, ABOUT_US, TOPICS } = await import('../lib/modes.js');
+  for (const [name, set] of Object.entries({ BIBLE, ...TOPICS })) {
+    const all = Object.values(set).flat();
+    assert.ok(all.length >= 40, `${name} has ${all.length}`);
+    assert.equal(new Set(all.map(q => q.question)).size, all.length);
+    assert.ok(all.every(q => q.question && q.answer && q.answer.length <= 60));
+  }
+  assert.ok(WORDS.length >= 40 && ABOUT_US.length >= 40, `${WORDS.length} words, ${ABOUT_US.length} about`);
   for (const count of [3, 5, 8]) {
     const picked = rules.mixed(BIBLE, count);
     assert.equal(new Set(picked).size, count);
@@ -154,6 +161,23 @@ for (const game of ['bluff', 'doodle']) {
     for (const p of phones) await p.locator('#face').setInputFiles(new URL('../public/apple-touch-icon.png', import.meta.url).pathname);
     for (const p of phones) await p.waitForFunction(() => document.querySelectorAll('li img.face').length === 3, null, { timeout: 8000 });
     await host.screenshot({ path: '/tmp/lobby.png', fullPage: true });
+    // The photo follows the phone into a new room, until it expires.
+    await host.waitForFunction(() => localStorage.getItem('face'));
+    const again = await host.context().newPage();
+    await again.addInitScript(() => localStorage.removeItem('room'));
+    await again.goto(`${base}/play.html?game=bluff&code=ZZZZ`);
+    await again.getByPlaceholder('Your name').fill('Ann'); await click(again, 'Create a room');
+    await again.locator('li img.face').waitFor({ timeout: 8000 });
+    const kept = await again.evaluate(async () => {
+      const { savedFace } = await import('/face.js');
+      const full = localStorage.getItem('face');
+      localStorage.setItem('face', JSON.stringify({ data: 'x', expires: Date.now() - 1 }));
+      const expired = savedFace() === '' && !localStorage.getItem('face');
+      localStorage.setItem('face', full);
+      return expired;
+    });
+    assert.ok(kept, 'expired photos are erased');
+    await again.close();
   }
   if (game === 'bluff') {
     const guest = guests[0];
@@ -186,7 +210,7 @@ for (const game of ['bluff', 'doodle']) {
     }
     for (const p of writers) {
       await p.getByText('Which one is real?').waitFor({ timeout: 8000 });
-      await p.locator('button.big:not(.alt):enabled').first().click();
+      await p.locator('button.big:not(.alt):enabled').filter({ hasText: /fib|hootenanny/ }).first().click(); // always pick a fake
     }
     if (game === 'bluff' && round === 0) {
       let seen = false;

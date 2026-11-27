@@ -1,6 +1,6 @@
 import { el, homeLink } from './ui.js';
 import { picture, sketchpad } from './canvas.js';
-import { shrink } from './face.js';
+import { shrink, saveFace, savedFace, FACE_DAYS } from './face.js';
 import { BLUFF_TOPICS } from './topics.js';
 
 const app = document.getElementById('app');
@@ -35,6 +35,7 @@ async function sendFace(file) {
   try {
     const data = file ? await shrink(file) : '';
     apply(await api({ action: 'face', data, ...me }));
+    saveFace(data);
     note.textContent = '';
   } catch (err) { note.textContent = err.status ? err.message : "That photo didn't work. Try another."; }
 }
@@ -44,7 +45,7 @@ function facePicker() {
   return el('div', {}, input,
     button(mine.face ? 'Change your bluff face' : 'Add your bluff face', () => input.click(), 'alt'),
     mine.face && button('Remove photo', () => sendFace(null), 'alt'),
-    el('p', { className: 'fine' }, 'Shows when you fool someone. Only this room sees it. It is deleted the next time a room is created after this one has been idle for a day.'));
+    el('p', { className: 'fine' }, `Shows when you fool someone; only people in the room see it. This phone remembers it for ${FACE_DAYS} days and adds it to new rooms. Remove photo forgets it. The room's copy is deleted when a new room is created after this one sits idle for a day.`));
 }
 const label = id => BLUFF_TOPICS.find(([t]) => t === id)?.[1];
 
@@ -205,6 +206,8 @@ function lobbyForm() {
       const data = await api(body);
       me = { code: data.code, playerId: data.playerId, secret: data.secret }; write(me);
       version = 0; shown = ''; apply(data); poll();
+      const face = savedFace();
+      if (face) api({ action: 'face', data: face, ...me }).then(apply).catch(() => {});
     } catch (err) { note.textContent = err.message; }
     finally { busy = false; }
   };
@@ -218,3 +221,4 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && me
 const invited = params.get('code')?.toUpperCase();
 if (me && (!invited || invited === me.code)) { app.replaceChildren(el('p', {}, 'Rejoining…'), waiting, note); poll(); }
 else { me = null; lobbyForm(); }
+savedFace(); // erases an expired photo whenever this page is opened

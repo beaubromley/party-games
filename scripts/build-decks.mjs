@@ -16,7 +16,7 @@ const RENAME = { "People's Republic of China": 'China' };
 const TOPICS = [
   { id: 'countries', name: 'Countries', group: 'Topics', query: popular('?item wdt:P31 wd:Q6256 .', 100) },
   { id: 'animated', allow: APPROVED_MOVIES, name: 'Animated Movies', group: 'Topics', query: popular('VALUES ?type { wd:Q202866 wd:Q29168811 } ?item wdt:P31 ?type .', 30, 100) },
-  { id: 'hoops', name: 'Basketball Stars', group: 'Topics', query: popular('?item wdt:P106 wd:Q3665646 ; wdt:P3647 ?nbaId .', 45, 80) },
+  { id: 'hoops', name: 'Basketball Stars', group: 'Topics', query: popular('?item wdt:P106 wd:Q3665646 ; wdt:P3647 ?nbaId .', 25, 80) },
 ];
 
 async function fetchTopic({ query, allow, ...deck }) {
