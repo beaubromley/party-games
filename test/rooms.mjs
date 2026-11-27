@@ -268,7 +268,9 @@ const room = (game, n) => {
   await assert.rejects(handle(query, { action: 'kick', ...b, target: c.playerId }), /Only the host/);
   await assert.rejects(handle(query, { action: 'claim', ...b }), /still here/);
   assert.equal((await handle(query, { action: 'ping', ...b })).hostAway, false);
-  sqlite.prepare('UPDATE presence SET seen = ? WHERE code = ?').run(Date.now() - 60000, h.code);
+  sqlite.prepare('UPDATE presence SET seen = ? WHERE code = ?').run(Date.now() - 4 * 60000, h.code);
+  assert.equal((await handle(query, { action: 'ping', ...b })).hostAway, false, 'four quiet minutes is fine');
+  sqlite.prepare('UPDATE presence SET seen = ? WHERE code = ?').run(Date.now() - 6 * 60000, h.code);
   assert.equal((await handle(query, { action: 'ping', ...b })).hostAway, true);
   assert.equal((await handle(query, { action: 'claim', ...b })).state.host, b.playerId);
   await assert.rejects(handle(query, { action: 'claim', ...c }), /still here/);
