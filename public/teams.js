@@ -1,5 +1,5 @@
 // Two-team scoreboard shared by the one-phone games. Saved on this phone until reset.
-import { el } from './ui.js';
+import { el, podium } from './ui.js';
 let scores = [0, 0];
 try { const saved = JSON.parse(localStorage.getItem('teams')); if (saved?.length === 2 && saved.every(Number.isInteger)) scores = saved; } catch {}
 
@@ -12,6 +12,14 @@ export function scoreboard(points = 0) {
     try { localStorage.setItem('teams', JSON.stringify(scores)); } catch {}
     draw();
   };
+  const reset = () => { change(0, -scores[0]); change(1, -scores[1]); };
+  // The final standings, until they start over or go back to playing.
+  const finish = () => box.replaceChildren(
+    el('p', { className: 'question verdict' }, scores[0] === scores[1] ? "It's a tie!" : `Team ${scores[0] > scores[1] ? 1 : 2} wins!`),
+    podium(scores.map((score, i) => ({ name: `Team ${i + 1}`, score }))),
+    el('button', { className: 'wide', onclick: () => { pending = 0; reset(); } }, 'New game'),
+    el('button', { className: 'wide', onclick: () => draw() }, 'Keep playing'),
+    el('a', { className: 'wide', href: '/' }, 'All games'));
   const draw = () => box.replaceChildren(
     ...scores.map((score, i) => el('div', { className: 'team' },
       el('h2', {}, `Team ${i + 1}`), el('output', {}, String(score)),
@@ -19,9 +27,9 @@ export function scoreboard(points = 0) {
       el('div', { className: 'adjust' },
         el('button', { ariaLabel: `Team ${i + 1} minus one`, onclick: () => change(i, -1) }, '-1'),
         el('button', { ariaLabel: `Team ${i + 1} plus one`, onclick: () => change(i, 1) }, '+1')))),
-    el('button', { className: 'reset', onclick: () => {
-      if (!confirm('Reset both team scores to zero?')) return;
-      change(0, -scores[0]); change(1, -scores[1]);
+    (scores[0] || scores[1]) ? el('button', { className: 'wide end', onclick: finish }, 'End game: show winner') : '',
+    el('button', { className: 'wide reset', onclick: () => {
+      if (confirm('Reset both team scores to zero?')) reset();
     } }, 'Reset scores'));
   draw();
   return box;

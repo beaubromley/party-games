@@ -80,3 +80,17 @@ h2 { margin-bottom: 4px; }
 .answer button.on { background: var(--ink); color: var(--paper); }
 .page { border-top: 2px solid var(--ink); padding-top: 10px; margin-top: 14px; }
 .page .question { overflow-wrap: anywhere; }
+.podium { display: flex; align-items: flex-end; justify-content: center; gap: 8px; margin: 18px 0; text-align: center; }
+.place { flex: 1; min-width: 0; max-width: 150px; }
+.who { margin-bottom: 8px; overflow-wrap: anywhere; line-height: 1.2; }
+.who .face { display: block; margin: 0 auto 4px; width: 56px; height: 56px; }
+.block { display: flex; flex-direction: column; justify-content: center; border: 2px solid var(--ink); border-radius: 4px 4px 0 0; font-weight: 600; }
+.block strong { font-family: var(--display); font-size: 30px; }
+.place1 .block { height: 140px; background: var(--gold); }
+.place2 .block { height: 105px; background: #cfd3d6; }
+.place3 .block { height: 80px; background: #d19a6a; }
+.verdict { grid-column: 1 / -1; text-align: center; }
+.teams .podium, .teams .wide { grid-column: 1 / -1; }
+.teams a.wide { text-align: center; padding: 12px; font-weight: 600; }
+.teams .end { background: var(--ink); color: var(--paper); }
+a.link { text-align: center; text-decoration: none; padding: 12px; border: 2px solid var(--ink); border-radius: 4px; font-weight: 600; }

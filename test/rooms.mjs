@@ -306,7 +306,12 @@ for (const game of ['bluff', 'doodle']) {
     if (round === 1) { await guests[0].reload(); await guests[0].getByText(/REAL:/).waitFor({ timeout: 8000 }); } // rejoin
     await click(host, round === 2 ? 'Final scores' : 'Next round');
   }
-  for (const p of phones) await p.getByText(/wins!/).waitFor({ timeout: 8000 });
+  for (const p of phones) await p.getByText(/wins!|for the win!/).waitFor({ timeout: 8000 });
+  await host.locator('.podium').waitFor();
+  await host.getByRole('heading', { name: 'Play again' }).waitFor();
+  await host.screenshot({ path: `/tmp/${game}-final.png`, fullPage: true });
+  // Choosing another game from the menu starts fresh instead of reopening this room.
+  await guests[1].goto(`${base}/play.html?game=majority`); await guests[1].getByPlaceholder('Room code').waitFor();
   console.log(`${game}: full game passed on 3 browsers`);
 }
 for (const game of ['faceoff', 'majority', 'telephone']) {
@@ -379,7 +384,12 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
       await click(host, page < 3 ? 'Show next page' : book < 3 ? 'Next book' : 'Finish');
     }
   }
-  for (const p of phones) await p.getByText(game === 'telephone' ? 'Every book has been read.' : /wins!/).waitFor({ timeout: 8000 });
+  for (const p of phones) await p.getByText(game === 'telephone' ? 'Every book has been read.' : /wins!|for the win!/).waitFor({ timeout: 8000 });
+  assert.equal(await host.locator('.podium').count(), game === 'telephone' ? 0 : 1);
+  await host.getByRole('heading', { name: 'Play again' }).waitFor();
+  if (game !== 'telephone') await host.screenshot({ path: `/tmp/${game}-final.png`, fullPage: true });
+  await click(guests[0], 'All games'); await guests[0].locator('.menu').waitFor();
+  assert.equal(await guests[0].evaluate(() => localStorage.getItem('room')), null);
   console.log(`${game}: full game passed on 3 browsers`);
 }
 const solo = await phone();

@@ -1,4 +1,4 @@
-import { el, homeLink } from './ui.js';
+import { el, homeLink, podium } from './ui.js';
 import { picture, sketchpad } from './canvas.js';
 import { shrink, saveFace, savedFace, FACE_DAYS } from './face.js';
 import { BLUFF_TOPICS } from './topics.js';
@@ -189,13 +189,25 @@ function render() {
   } else {
     const top = Math.max(...s.players.map(p => p.score));
     if (game === 'telephone') nodes.push(el('h1', {}, 'The end'), el('p', { className: 'question' }, 'Every book has been read.'));
-    else nodes.push(el('h1', {}, 'Final scores'), el('p', { className: 'question' }, top ? `${s.players.filter(p => p.score === top).map(p => p.name).join(' & ')} wins!` : 'Nobody scored. A true tie!'), scores());
+    else {
+      const winners = s.players.filter(p => p.score === top).map(p => p.name);
+      nodes.push(el('h1', {}, 'Final scores'),
+        el('p', { className: 'question' }, top ? `${winners.join(' & ')} ${winners.length > 1 ? 'tie for the win!' : 'wins!'}` : 'Nobody scored. A true tie!'),
+        top > 0 && podium(s.players.map(p => ({ name: p.name, score: p.score, face: faceImg(p.id) }))), scores());
+    }
     nodes.push(topicPicker(host));
-    if (host) nodes.push(...startButtons());
+    if (host) nodes.push(el('h2', {}, 'Play again'), ...startButtons());
+    else nodes.push(el('p', {}, 'Waiting for the host to start another game.'));
     nodes.push(facePicker());
   }
   if (host && ['drawing', 'writing', 'voting'].includes(s.phase)) nodes.push(button('Host: skip waiting', () => send({ action: 'next' }), 'alt'));
-  nodes.push(waiting, note, button('Leave game', () => { if (confirm('Leave this game? You cannot rejoin once it has started.')) leave(); }, 'alt'),
+  const exit = s.phase === 'done'
+    ? button('All games', () => {
+      if (host && s.players.length > 1 && !confirm('You are the host. If you leave, this room cannot start another game.')) return;
+      clearTimeout(timer); me = null; write(null); location.href = '/';
+    }, 'alt')
+    : button('Leave game', () => { if (confirm('Leave this game? You cannot rejoin once it has started.')) leave(); }, 'alt');
+  nodes.push(waiting, note, exit,
     game === 'bluff' && el('footer', {}, 'Trivia: ', el('a', { href: 'https://opentdb.com' }, 'Open Trivia Database'), ' (CC BY-SA 4.0), filtered, plus some written for this app.'));
   app.replaceChildren(...nodes.filter(Boolean));
   // Jump to the top for a new screen only, not when browsing topics.
@@ -215,7 +227,7 @@ function lobbyForm() {
     busy = true; note.textContent = '';
     try {
       const data = await api(body);
-      me = { code: data.code, playerId: data.playerId, secret: data.secret }; write(me);
+      me = { code: data.code, playerId: data.playerId, secret: data.secret, game: data.state.game }; write(me);
       version = 0; shown = ''; apply(data); poll();
       const face = savedFace();
       if (face) api({ action: 'face', data: face, ...me }).then(apply).catch(() => {});
@@ -230,6 +242,7 @@ function lobbyForm() {
 // A locked phone resumes where it left off.
 document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { version = 0; poll(); } });
 const invited = params.get('code')?.toUpperCase();
-if (me && (!invited || invited === me.code)) { app.replaceChildren(el('p', {}, 'Rejoining…'), waiting, note); poll(); }
+const otherGame = !invited && asked && me?.game && me.game !== asked;
+if (me && !otherGame && (!invited || invited === me.code)) { app.replaceChildren(el('p', {}, 'Rejoining…'), waiting, note); poll(); }
 else { me = null; lobbyForm(); }
 savedFace(); // erases an expired photo whenever this page is opened
