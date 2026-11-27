@@ -94,3 +94,5 @@ h2 { margin-bottom: 4px; }
 .teams a.wide { text-align: center; padding: 12px; font-weight: 600; }
 .teams .end { background: var(--ink); color: var(--paper); }
 a.link { text-align: center; text-decoration: none; padding: 12px; border: 2px solid var(--ink); border-radius: 4px; font-weight: 600; }
+details { margin-top: 16px; }
+summary { font-weight: 600; min-height: 44px; display: list-item; padding: 10px 0; }

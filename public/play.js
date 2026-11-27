@@ -18,6 +18,9 @@ const note = el('p', { className: 'note error', role: 'status' });
 const waiting = el('p', { className: 'note' });
 let faces = {}, facesKey = '';
 let draft = { step: 0, text: '' }; // typed answer, kept across redraws
+// Host controls live in one element that updates by itself, so changing them never wipes a drawing.
+const controls = el('div');
+let controlsKey = '', managing = false, hostAway = false, pinged = 0;
 const FACE_SCREENS = ['lobby', 'reveal', 'done']; // screens with nothing half-typed to lose
 const faceImg = (id, extra = '') => faces[id] && el('img', { className: 'face ' + extra, src: faces[id], alt: '' });
 async function loadFaces() {
@@ -85,7 +88,44 @@ async function api(body) {
   return data;
 }
 const button = (label, onclick, extra = '') => el('button', { className: 'big ' + extra, onclick }, label);
-function leave() { clearTimeout(timer); preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function updateControls() {
+  const host = state.you === state.host, playing = !['lobby', 'done'].includes(state.phase);
+  const key = [host, playing, state.phase, state.host, hostAway, state.players.map(p => p.id).join()].join(':');
+  if (key === controlsKey) return;
+  controlsKey = key;
+  const others = state.players.filter(p => p.id !== state.you);
+  const hostName = state.players.find(p => p.id === state.host)?.name;
+  const panel = el('details', { open: managing, ontoggle: () => { managing = panel.open; } },
+    el('summary', {}, 'Manage players'),
+    others.map(p => button(`Remove ${p.name}`, () => {
+      if (confirm(`Remove ${p.name} from this game?`)) send({ action: 'kick', target: p.id });
+    }, 'alt')),
+    playing && button('Restart: back to lobby', () => {
+      if (confirm('End this game and send everyone back to the lobby? Scores reset.')) send({ action: 'restart' });
+    }, 'alt'));
+  controls.replaceChildren(...[
+    host && ['drawing', 'writing', 'voting'].includes(state.phase) && button('Host: skip waiting', () => send({ action: 'next' }), 'alt'),
+    host && (others.length > 0 || playing) && panel,
+    !host && hostAway && el('p', {}, `${hostName}, the host, seems to be away.`),
+    !host && hostAway && button('Take over as host', () => { if (confirm('Become the host of this room?')) send({ action: 'claim' }); }, 'alt'),
+  ].filter(Boolean));
+}
+async function ping() {
+  if (Date.now() - pinged < 15000) return;
+  pinged = Date.now();
+  const mine = me;
+  try {
+    const data = await api({ action: 'ping', ...mine });
+    if (me === mine && state) { hostAway = data.hostAway; updateControls(); }
+  } catch {}
+}
+// Tells the room, so the game can carry on without this phone.
+async function quit() {
+  const mine = me;
+  clearTimeout(timer); me = null;
+  try { await api({ action: 'leave', ...mine }); } catch {}
+}
+function leave() { clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -103,9 +143,10 @@ async function poll() {
     const data = await api({ action: 'poll', ...mine, version });
     if (me !== mine) return;
     apply(data);
+    ping();
   } catch (err) {
     if (me !== mine) return;
-    if (/not found|not in this room/i.test(err.message)) { leave(); note.textContent = 'That room has ended.'; return; }
+    if (/not found|not in this room/i.test(err.message)) { const ended = /not found/i.test(err.message); leave(); note.textContent = ended ? 'That room has ended.' : 'You are no longer in that room.'; return; }
     waiting.textContent = 'Reconnecting…'; version = 0;
   }
   clearTimeout(timer);
@@ -118,9 +159,10 @@ function apply(data) {
   waiting.textContent = state.waiting.length ? `Waiting on: ${state.waiting.join(', ')}` : '';
   // Only rebuild when the screen really changes, so a half-typed answer or drawing survives polling.
   const key = [state.step, state.sent, state.item, state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
-    FACE_SCREENS.includes(state.phase) && state.players.map(p => p.face).join(),
+    FACE_SCREENS.includes(state.phase) && state.players.map(p => [p.id, p.face]).join() + state.host,
     state.requests.map(r => r.id + r.topic).join()].join(':');
   if (key !== shown) { shown = key; note.textContent = ''; render(); }
+  updateControls();
   loadFaces();
 }
 
@@ -136,6 +178,7 @@ function render() {
     ? [3, 5, 8].map(n => button(`Start: ${n} questions`, () => send({ action: 'start', topic, rounds: n })))
     : [button('Start drawing', () => send({ action: 'start' }))];
   if (s.phase === 'lobby') {
+    if (s.notice) nodes.push(el('p', { className: 'note error' }, s.notice));
     const link = `${location.origin}/play.html?game=${game}&code=${me.code}`;
     nodes.push(el('h1', {}, title()), PARTY_GAMES[game] && el('p', {}, PARTY_GAMES[game].blurb), el('p', {}, 'Room code'), el('p', { className: 'code' }, me.code),
       button('Share invite link', async () => {
@@ -200,14 +243,13 @@ function render() {
     else nodes.push(el('p', {}, 'Waiting for the host to start another game.'));
     nodes.push(facePicker());
   }
-  if (host && ['drawing', 'writing', 'voting'].includes(s.phase)) nodes.push(button('Host: skip waiting', () => send({ action: 'next' }), 'alt'));
   const exit = s.phase === 'done'
-    ? button('All games', () => {
-      if (host && s.players.length > 1 && !confirm('You are the host. If you leave, this room cannot start another game.')) return;
-      clearTimeout(timer); me = null; write(null); location.href = '/';
-    }, 'alt')
-    : button('Leave game', () => { if (confirm('Leave this game? You cannot rejoin once it has started.')) leave(); }, 'alt');
-  nodes.push(waiting, note, exit,
+    ? button('All games', async () => { await quit(); write(null); location.href = '/'; }, 'alt')
+    : button('Leave game', async () => {
+      if (!confirm('Leave this game? The others carry on without you.')) return;
+      await quit(); leave();
+    }, 'alt');
+  nodes.push(controls, waiting, note, exit,
     game === 'bluff' && el('footer', {}, 'Trivia: ', el('a', { href: 'https://opentdb.com' }, 'Open Trivia Database'), ' (CC BY-SA 4.0), filtered, plus some written for this app.'));
   app.replaceChildren(...nodes.filter(Boolean));
   // Jump to the top for a new screen only, not when browsing topics.
@@ -240,7 +282,7 @@ function lobbyForm() {
 }
 
 // A locked phone resumes where it left off.
-document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { version = 0; poll(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && me) { version = 0; pinged = 0; poll(); } });
 const invited = params.get('code')?.toUpperCase();
 const otherGame = !invited && asked && me?.game && me.game !== asked;
 if (me && !otherGame && (!invited || invited === me.code)) { app.replaceChildren(el('p', {}, 'Rejoining…'), waiting, note); poll(); }

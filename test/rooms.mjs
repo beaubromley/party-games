@@ -204,6 +204,84 @@ const room = (game, n) => {
     assert.equal(y.state.phase, 'writing');
   }
 }
+// Removing players: every game, every phase, either carries on to a finish or returns to the lobby.
+{
+  const games = ['bluff', 'doodle', 'faceoff', 'majority', 'telephone'];
+  const strokes = [[0, 12, [1, 2, 3, 4]]];
+  const begin = (game, n, about) => {
+    const r = room(game, n);
+    rules.start(r, game === 'bluff' ? Array.from({ length: 4 }, (_, i) => about ? { question: 'q' + i, subject: 'p' + (i % n) } : { question: 'q' + i, answer: 'truth ' + i })
+      : game === 'doodle' ? r.players.map(p => 'prompt ' + p.id)
+      : game === 'faceoff' ? { sets: 2, prompts: Array.from({ length: 2 * n }, (_, i) => 'f' + i) }
+      : game === 'majority' ? { prompts: ['a', 'b', 'c'] } : {});
+    return r;
+  };
+  // One legal move, or the host moving things along.
+  const act = (r, random) => {
+    const waiting = rules.waitingOn(r);
+    if (!waiting.length || random() < 0.05) return rules.advance(r, random);
+    const id = waiting[Math.floor(random() * waiting.length)];
+    const v = rules.view(r, id);
+    if (r.phase === 'drawing') rules.submitDrawing(r, id, strokes);
+    else if (r.phase === 'writing') rules.submitFake(r, id, `word ${id} ${r.step}`, v.item);
+    else rules.vote(r, id, v.options.findIndex(o => !o.mine));
+  };
+  let seed = 7;
+  const random = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  let carried = 0, restarted = 0;
+  for (let run = 0; run < 6000; run++) {
+    const game = games[run % games.length], n = 2 + (run % 5);
+    const r = begin(game, n, game === 'bluff' && run % 2 === 0);
+    const log = `${game} ${n} players, run ${run}`;
+    for (let guard = 0; !['done', 'lobby'].includes(r.phase); guard++) {
+      assert.ok(guard < 500, 'stuck: ' + log);
+      if (r.players.length > 1 && random() < 0.08) {
+        const target = r.players[Math.floor(random() * r.players.length)].id;
+        rules.remove(r, target);
+        if (r.phase === 'lobby') { restarted++; assert.ok(r.players.length < 2 && r.notice, log); } else carried++;
+      } else act(r, random);
+      // Nobody may be left staring at a screen that waits for no one.
+      if (['writing', 'drawing', 'voting'].includes(r.phase)) assert.ok(rules.waitingOn(r).length, `idle in ${r.phase}: ${log}`);
+      for (const p of r.players) {
+        const v = rules.view(r, p.id);
+        assert.ok(!JSON.stringify(v).includes('undefined'), log);
+        if (['writing', 'voting'].includes(r.phase) && rules.waitingOn(r).includes(p.id) && game !== 'telephone')
+          assert.ok(v.question || v.drawing, `blank screen: ${log}`);
+      }
+    }
+  }
+  assert.ok(carried > 500 && restarted > 100, `${carried} carried on, ${restarted} restarted`);
+  // Dropping the one removed answer re-points votes.
+  const r = begin('bluff', 4);
+  for (const p of r.players) rules.submitFake(r, p.id, 'fib ' + p.id);
+  const pick = text => r.options.findIndex(o => o.text === text);
+  rules.vote(r, 'p0', pick('fib p1')); rules.vote(r, 'p1', pick('truth 0')); rules.vote(r, 'p2', pick('fib p3'));
+  const step = r.step;
+  rules.remove(r, 'p3');
+  assert.equal(r.step, step + 1);
+  assert.equal(r.options[r.votes.p0].text, 'fib p1'); assert.equal(r.options[r.votes.p1].text, 'truth 0'); assert.ok(!('p2' in r.votes));
+  // Through the handler: kick, leave, host handover.
+  const h = await handle(query, { action: 'create', game: 'majority', name: 'A' });
+  const j = await Promise.all(['B', 'C'].map(name => handle(query, { action: 'join', code: h.code, name })));
+  const [a, b, c] = [h, ...j].map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
+  await handle(query, { action: 'start', ...a, step: 0 });
+  await assert.rejects(handle(query, { action: 'kick', ...b, target: c.playerId }), /Only the host/);
+  await assert.rejects(handle(query, { action: 'claim', ...b }), /still here/);
+  assert.equal((await handle(query, { action: 'ping', ...b })).hostAway, false);
+  sqlite.prepare('UPDATE presence SET seen = ? WHERE code = ?').run(Date.now() - 60000, h.code);
+  assert.equal((await handle(query, { action: 'ping', ...b })).hostAway, true);
+  assert.equal((await handle(query, { action: 'claim', ...b })).state.host, b.playerId);
+  await assert.rejects(handle(query, { action: 'claim', ...c }), /still here/);
+  assert.equal((await handle(query, { action: 'kick', ...b, target: c.playerId })).state.phase, 'writing');
+  await assert.rejects(handle(query, { action: 'poll', ...c, version: 1 }), /not in this room/);
+  const left = await handle(query, { action: 'leave', ...b });
+  assert.equal(left.state.phase, 'lobby'); assert.equal(left.state.host, a.playerId);
+  await handle(query, { action: 'join', code: h.code, name: 'C' }); // welcome back
+  const again = await handle(query, { action: 'poll', ...a });
+  await handle(query, { action: 'start', ...a, step: again.state.step });
+  const now = await handle(query, { action: 'poll', ...a });
+  assert.equal((await handle(query, { action: 'restart', ...a, step: now.state.step })).state.phase, 'lobby');
+}
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
@@ -391,6 +469,43 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   await click(guests[0], 'All games'); await guests[0].locator('.menu').waitFor();
   assert.equal(await guests[0].evaluate(() => localStorage.getItem('room')), null);
   console.log(`${game}: full game passed on 3 browsers`);
+}
+// In the browser: removing someone mid-drawing leaves the other drawings alone.
+{
+  const phones = [await phone(), await phone(), await phone(), await phone()];
+  const [host, ...guests] = phones;
+  for (const p of phones) p.on('dialog', d => d.accept());
+  await host.goto(`${base}/play.html?game=doodle`);
+  await host.getByPlaceholder('Your name').fill('Ann'); await click(host, 'Create a room');
+  const code = (await host.locator('.code').textContent()).trim();
+  for (const [i, g] of guests.entries()) {
+    await g.goto(`${base}/play.html?game=doodle&code=${code}`);
+    await g.getByPlaceholder('Your name').fill(['Bo', 'Cy', 'Di'][i]); await click(g, 'Join room');
+  }
+  await host.locator('li').nth(3).waitFor({ timeout: 8000 });
+  await click(host, 'Start drawing');
+  const [bo, cy, di] = guests;
+  await cy.locator('canvas.pad').waitFor(); await scribble(cy);
+  const ink = () => cy.evaluate(() => document.querySelector('canvas.pad').getContext('2d').getImageData(0, 0, 1000, 1000).data.filter((v, i) => i % 4 === 3 && v).length);
+  const before = await ink(); assert.ok(before > 0);
+  await host.getByText('Manage players').click();
+  await host.screenshot({ path: '/tmp/manage.png', fullPage: true });
+  await click(host, 'Remove Bo');
+  await bo.getByText('You are no longer in that room.').waitFor({ timeout: 8000 });
+  await click(di, 'Leave game'); await di.getByPlaceholder('Room code').waitFor();
+  await host.getByRole('button', { name: 'Remove Di' }).waitFor({ state: 'detached', timeout: 8000 });
+  await cy.waitForTimeout(1700);
+  assert.equal(await ink(), before, 'drawing survives removals');
+  // The host goes quiet; the last guest takes over.
+  await host.close();
+  sqlite.prepare('UPDATE presence SET seen = 0 WHERE code = ?').run(code);
+  await cy.reload(); await click(cy, 'Take over as host');
+  await cy.getByRole('button', { name: 'Host: skip waiting' }).waitFor({ timeout: 8000 });
+  await cy.getByText('Manage players').click();
+  await click(cy, 'Remove Ann'); // one player cannot carry on
+  await cy.getByText(/Back to the lobby/).waitFor({ timeout: 8000 });
+  await cy.screenshot({ path: '/tmp/restarted.png', fullPage: true });
+  console.log('removing players: passed');
 }
 const solo = await phone();
 await solo.goto(`${base}/draw.html`);
