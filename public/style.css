@@ -72,3 +72,11 @@ canvas.pad { width: min(100%, 58dvh); }
 .toggle input { width: 24px; height: 24px; margin: 0; }
 .samples { padding-left: 20px; margin: 12px 0; font-size: 18px; line-height: 1.6; }
 h2 { margin-bottom: 4px; }
+.menu a:nth-of-type(5) { background: var(--gold); color: var(--ink); } .menu a:nth-of-type(6) { background: var(--red); } .menu a:nth-of-type(7) { background: var(--blue); }
+.answer { border: 2px solid var(--ink); border-radius: 4px; background: #fffaf0; padding: 12px; margin-top: 12px; }
+.answer b { font-family: var(--display); font-size: 26px; line-height: 1.15; overflow-wrap: anywhere; }
+.answer.winner { background: var(--gold); }
+.answer button { margin-top: 8px; }
+.answer button.on { background: var(--ink); color: var(--paper); }
+.page { border-top: 2px solid var(--ink); padding-top: 10px; margin-top: 14px; }
+.page .question { overflow-wrap: anywhere; }

@@ -123,6 +123,87 @@ const ask = async () => 'A hootenanny';
     assert.ok(Math.min(...per) >= 1 && Math.max(...per) - Math.min(...per) <= 1, `even mix for ${count}: ${per}`);
   }
 }
+// The three party games, rules only.
+const room = (game, n) => {
+  const r = rules.newRoom(game);
+  for (let i = 0; i < n; i++) rules.join(r, { id: 'p' + i, secret: 's', name: 'P' + i });
+  return r;
+};
+{
+  const { FACEOFF, MAJORITY } = await import('../lib/party-content.js');
+  for (const list of [FACEOFF, MAJORITY]) { assert.ok(list.length >= 40); assert.equal(new Set(list).size, list.length); }
+  for (const n of [2, 3, 12]) {
+    const f = room('faceoff', n);
+    rules.start(f, { sets: 2, prompts: FACEOFF.slice(0, 2 * n) });
+    const seen = new Set();
+    for (let guard = 0; f.phase !== 'done'; guard++) {
+      assert.ok(guard < 200);
+      const waiting = rules.waitingOn(f);
+      if (f.phase === 'writing') for (const id of waiting) for (let k = 0; k < 2; k++) {
+        const v = rules.view(f, id); seen.add(v.question);
+        rules.submitFake(f, id, `${id} ${k}`, v.item);
+        if (k === 0) assert.throws(() => rules.submitFake(f, id, 'double tap', v.item), /Already|over/);
+      }
+      else if (f.phase === 'voting') {
+        assert.ok(rules.view(f, 'p0').options.every(o => !('author' in o)));
+        for (const id of waiting) rules.vote(f, id, rules.view(f, id).options.findIndex(o => !o.mine));
+      } else rules.advance(f);
+    }
+    assert.equal(seen.size, 2 * n);
+    assert.ok(f.players.some(p => p.score > 0));
+  }
+  // One missing answer wins unopposed; none skips the matchup.
+  const f = room('faceoff', 3);
+  rules.start(f, { sets: 1, prompts: ['a', 'b', 'c'] });
+  rules.advance(f); assert.equal(f.phase, 'done');
+
+  const m = room('majority', 5);
+  rules.start(m, { prompts: ['Name a drink', 'Name a pie'] });
+  ['Soda', 'sodas', 'Pop', 'pop!', 'Tea'].forEach((a, i) => rules.submitFake(m, 'p' + i, a));
+  assert.equal(m.phase, 'reveal'); assert.equal(m.groups.length, 3);
+  assert.deepEqual(m.players.map(p => p.score), [1000, 1000, 1000, 1000, 0]);
+  rules.merge(m, 0, 1);
+  assert.deepEqual(m.players.map(p => p.score), [1000, 1000, 1000, 1000, 0], 'combining never double-scores');
+  assert.throws(() => rules.merge(m, 0, 0), /different/);
+  rules.advance(m);
+  ['pie', 'pumpkin pie', 'apple', 'pecan', 'cherry'].forEach((a, i) => rules.submitFake(m, 'p' + i, a));
+  assert.equal(m.groups.length, 5); assert.deepEqual(m.gains, {});
+  rules.advance(m); assert.equal(m.phase, 'done');
+
+  const { turnCount } = await import('../lib/party.js');
+  assert.deepEqual([2, 3, 4, 5, 8, 12].map(turnCount), [3, 3, 3, 5, 7, 9]);
+  for (const n of [2, 3, 4, 12]) {
+    const t = room('telephone', n);
+    rules.start(t, {});
+    while (t.phase === 'writing' || t.phase === 'drawing') {
+      const turn = t.turn;
+      for (const id of rules.waitingOn(t)) {
+        const v = rules.view(t, id);
+        if (turn) assert.ok(t.phase === 'drawing' ? v.prev.text : v.prev.strokes);
+        if (t.phase === 'drawing') rules.submitDrawing(t, id, [[0, 12, [1, 2, 3, 4]]]); else rules.submitFake(t, id, 'words from ' + id);
+      }
+      assert.ok(t.turn !== turn || t.phase === 'reveal');
+    }
+    for (const b of t.books) {
+      assert.equal(b.entries.length, turnCount(n));
+      if (n > 2) assert.equal(new Set(b.entries.map(e => e.by)).size, b.entries.length, 'nobody sees a book twice');
+    }
+    let pages = 0; while (t.phase === 'reveal') { rules.advance(t); pages++; }
+    assert.equal(pages, n * turnCount(n));
+  }
+  // Skipping everyone still leaves a complete chain.
+  const t = room('telephone', 4);
+  rules.start(t, {});
+  for (let i = 0; i < 3; i++) rules.advance(t);
+  assert.equal(t.phase, 'reveal'); assert.ok(t.books.every(b => b.entries.every(e => e.skipped && (e.text || rules.validDrawing(e.strokes)))));
+  // And through the real handler.
+  for (const game of ['faceoff', 'majority', 'telephone']) {
+    const h = await handle(query, { action: 'create', game, name: 'A' });
+    await handle(query, { action: 'join', code: h.code, name: 'B' });
+    const y = await handle(query, { action: 'start', code: h.code, playerId: h.playerId, secret: h.secret, step: 0, rounds: 1 });
+    assert.equal(y.state.phase, 'writing');
+  }
+}
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
@@ -226,6 +307,79 @@ for (const game of ['bluff', 'doodle']) {
     await click(host, round === 2 ? 'Final scores' : 'Next round');
   }
   for (const p of phones) await p.getByText(/wins!/).waitFor({ timeout: 8000 });
+  console.log(`${game}: full game passed on 3 browsers`);
+}
+for (const game of ['faceoff', 'majority', 'telephone']) {
+  const phones = [await phone(), await phone(), await phone()];
+  const [host, ...guests] = phones;
+  await host.goto(`${base}/play.html?game=${game}`);
+  await host.getByPlaceholder('Your name').fill('Ann'); await click(host, 'Create a room');
+  const code = (await host.locator('.code').textContent()).trim();
+  for (const [i, g] of guests.entries()) {
+    await g.goto(`${base}/play.html?game=${game}&code=${code}`);
+    await g.getByPlaceholder('Your name').fill(['Bo', 'Cy'][i]); await click(g, 'Join room');
+  }
+  await host.locator('li').nth(2).waitFor({ timeout: 8000 });
+  await host.screenshot({ path: `/tmp/${game}-lobby.png`, fullPage: true });
+  await click(host, { faceoff: 'Start: 1 round', majority: 'Start: 5 questions', telephone: 'Start passing' }[game]);
+  const say = async (p, text) => {
+    await p.locator('input').fill(text); await p.waitForTimeout(1700); // survives a poll
+    assert.equal(await p.locator('input').inputValue(), text);
+    await click(p, 'Send');
+  };
+  if (game === 'faceoff') {
+    for (const [i, p] of phones.entries()) {
+      for (const n of [1, 2]) { await p.getByText(`Your prompt ${n} of 2`).waitFor({ timeout: 8000 }); await say(p, `joke ${i} ${n}`); }
+    }
+    for (let m = 1; m <= 3; m++) {
+      let voted = 0;
+      for (const p of phones) {
+        await p.getByText(`Matchup ${m} of 3`).or(p.getByRole('button', { name: /^(Next|Final scores)$/ })).first().waitFor({ timeout: 8000 }).catch(() => {});
+        await p.locator('button.big:not(.alt), .question').first().waitFor();
+        await p.waitForTimeout(1700);
+        const choice = p.locator('button.big:not(.alt)').filter({ hasText: 'joke' });
+        if (await choice.count()) { await choice.first().click(); voted++; }
+      }
+      assert.equal(voted, 1);
+      await host.locator('.answer.winner').waitFor({ timeout: 8000 });
+      if (m === 1) await host.screenshot({ path: '/tmp/faceoff-reveal.png', fullPage: true });
+      await click(host, m === 3 ? 'Final scores' : 'Next');
+    }
+  } else if (game === 'majority') {
+    for (let q = 1; q <= 5; q++) {
+      for (const [i, p] of phones.entries()) { await p.getByText(`Question ${q} of 5`).waitFor({ timeout: 8000 }); await p.locator('input').waitFor(); await say(p, ['Soda', 'soda', 'Pop'][i]); }
+      await host.locator('.answer.winner').waitFor({ timeout: 8000 });
+      if (q === 1) {
+        await host.locator('.answer button').first().click(); await host.getByRole('button', { name: 'Same as selected' }).click();
+        await host.getByText('Soda / soda / Pop (3)', { exact: false }).or(host.getByText('(3)', { exact: false })).first().waitFor({ timeout: 8000 });
+        await host.screenshot({ path: '/tmp/majority-reveal.png', fullPage: true });
+      }
+      await click(host, q === 5 ? 'Final scores' : 'Next question');
+    }
+  } else {
+    for (let turn = 1; turn <= 3; turn++) {
+      for (const [i, p] of phones.entries()) {
+        await p.getByText(`Turn ${turn} of 3`).waitFor({ timeout: 8000 });
+        if (turn === 2) {
+          await p.locator('canvas.pad').waitFor(); await scribble(p);
+          if (i === 0) await p.screenshot({ path: '/tmp/telephone-draw.png', fullPage: true });
+          await click(p, 'Send drawing');
+        } else {
+          await p.locator('input').waitFor();
+          if (turn === 1 && i === 0) { await click(p, 'Give me an idea'); assert.ok(await p.locator('input').inputValue()); await click(p, 'Send'); }
+          else await say(p, `page ${turn} ${i}`);
+        }
+      }
+    }
+    for (let book = 1; book <= 3; book++) for (let page = 1; page <= 3; page++) {
+      await host.locator('.page').nth(page - 1).waitFor({ timeout: 8000 });
+      await host.getByText(`(${book} of 3)`).waitFor({ timeout: 8000 });
+      await guests[0].locator('.page').nth(page - 1).waitFor({ timeout: 8000 });
+      if (book === 1 && page === 3) await host.screenshot({ path: '/tmp/telephone-reveal.png', fullPage: true });
+      await click(host, page < 3 ? 'Show next page' : book < 3 ? 'Next book' : 'Finish');
+    }
+  }
+  for (const p of phones) await p.getByText(game === 'telephone' ? 'Every book has been read.' : /wins!/).waitFor({ timeout: 8000 });
   console.log(`${game}: full game passed on 3 browsers`);
 }
 const solo = await phone();

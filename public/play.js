@@ -2,10 +2,12 @@ import { el, homeLink } from './ui.js';
 import { picture, sketchpad } from './canvas.js';
 import { shrink, saveFace, savedFace, FACE_DAYS } from './face.js';
 import { BLUFF_TOPICS } from './topics.js';
+import { PARTY_GAMES, partyScreen } from './party-ui.js';
 
 const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
-let game = params.get('game') === 'doodle' ? 'doodle' : 'bluff';
+const asked = params.get('game');
+let game = asked === 'doodle' || Object.hasOwn(PARTY_GAMES, asked) ? asked : 'bluff';
 const read = () => { try { return JSON.parse(localStorage.getItem('room')); } catch { return null; } };
 const write = v => { try { v ? localStorage.setItem('room', JSON.stringify(v)) : localStorage.removeItem('room'); } catch {} };
 let topic = 'trivia';
@@ -43,9 +45,9 @@ function facePicker() {
   const mine = state.players.find(p => p.id === state.you);
   const input = el('input', { type: 'file', accept: 'image/*', hidden: true, id: 'face', onchange: () => input.files[0] && sendFace(input.files[0]) });
   return el('div', {}, input,
-    button(mine.face ? 'Change your bluff face' : 'Add your bluff face', () => input.click(), 'alt'),
+    button(`${mine.face ? 'Change' : 'Add'} your ${PARTY_GAMES[game] ? 'photo' : 'bluff face'}`, () => input.click(), 'alt'),
     mine.face && button('Remove photo', () => sendFace(null), 'alt'),
-    el('p', { className: 'fine' }, `Shows when you fool someone; only people in the room see it. This phone remembers it for ${FACE_DAYS} days and adds it to new rooms. Remove photo forgets it. The room's copy is deleted when a new room is created after this one sits idle for a day.`));
+    el('p', { className: 'fine' }, `${PARTY_GAMES[game] ? 'Shows beside your name and answers' : 'Shows when you fool someone'}; only people in the room see it. This phone remembers it for ${FACE_DAYS} days and adds it to new rooms. Remove photo forgets it. The room's copy is deleted when a new room is created after this one sits idle for a day.`));
 }
 const label = id => BLUFF_TOPICS.find(([t]) => t === id)?.[1];
 
@@ -74,7 +76,7 @@ function topicPicker(host) {
       () => send({ action: 'request', topic: chosen })),
     host && state.requests.length > 0 && el('p', {}, 'Requests: ', state.requests.map(r => `${r.name} wants ${label(r.topic)}`).join('. ')));
 }
-const title = () => game === 'doodle' ? 'Doodle Bluff' : 'Bluff';
+const title = () => PARTY_GAMES[game]?.title ?? (game === 'doodle' ? 'Doodle Bluff' : 'Bluff');
 
 async function api(body) {
   const res = await fetch('/api/game', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
@@ -115,7 +117,7 @@ function apply(data) {
   version = data.version; state = data.state; game = state.game;
   waiting.textContent = state.waiting.length ? `Waiting on: ${state.waiting.join(', ')}` : '';
   // Only rebuild when the screen really changes, so a half-typed answer or drawing survives polling.
-  const key = [state.step, state.sent, state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
+  const key = [state.step, state.sent, state.item, state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
     FACE_SCREENS.includes(state.phase) && state.players.map(p => p.face).join(),
     state.requests.map(r => r.id + r.topic).join()].join(':');
   if (key !== shown) { shown = key; note.textContent = ''; render(); }
@@ -128,18 +130,22 @@ function render() {
   const scores = () => el('ol', { id: 'recap' }, [...s.players].sort((a, b) => b.score - a.score)
     .map(p => el('li', {}, faceImg(p.id), `${p.name}: ${p.score}${s.gains?.[p.id] ? ` (+${s.gains[p.id]})` : ''}`)));
   const subject = () => [s.question && el('p', { className: 'question' }, s.question), s.drawing && picture(s.drawing)];
-  const startButtons = () => game === 'bluff'
+  const startButtons = () => PARTY_GAMES[game]
+    ? PARTY_GAMES[game].starts.map(([text, n]) => button(text, () => send({ action: 'start', rounds: n })))
+    : game === 'bluff'
     ? [3, 5, 8].map(n => button(`Start: ${n} questions`, () => send({ action: 'start', topic, rounds: n })))
     : [button('Start drawing', () => send({ action: 'start' }))];
   if (s.phase === 'lobby') {
     const link = `${location.origin}/play.html?game=${game}&code=${me.code}`;
-    nodes.push(el('h1', {}, title()), el('p', {}, 'Room code'), el('p', { className: 'code' }, me.code),
+    nodes.push(el('h1', {}, title()), PARTY_GAMES[game] && el('p', {}, PARTY_GAMES[game].blurb), el('p', {}, 'Room code'), el('p', { className: 'code' }, me.code),
       button('Share invite link', async () => {
         try { navigator.share ? await navigator.share({ url: link }) : (await navigator.clipboard.writeText(link), note.textContent = 'Link copied'); } catch {}
       }, 'alt'),
       el('ul', { id: 'recap' }, s.players.map(p => el('li', {}, faceImg(p.id), p.name))), facePicker(), topicPicker(host));
     if (host && s.players.length >= 2) nodes.push(...startButtons());
     else nodes.push(el('p', {}, s.players.length < 2 ? 'Need at least 2 players.' : 'Waiting for the host to start.'));
+  } else if (PARTY_GAMES[game] && s.phase !== 'done') {
+    nodes.push(...partyScreen({ s, host, send, button, faceImg, scores, redraw: render }));
   } else if (s.phase === 'drawing') {
     if (s.sent) nodes.push(el('h1', {}, 'Nice art!'));
     else {
@@ -182,7 +188,8 @@ function render() {
     if (host) nodes.push(button(s.index + 1 >= s.total ? 'Final scores' : 'Next round', () => send({ action: 'next' })));
   } else {
     const top = Math.max(...s.players.map(p => p.score));
-    nodes.push(el('h1', {}, 'Final scores'), el('p', { className: 'question' }, `${s.players.filter(p => p.score === top).map(p => p.name).join(' & ')} wins!`), scores());
+    if (game === 'telephone') nodes.push(el('h1', {}, 'The end'), el('p', { className: 'question' }, 'Every book has been read.'));
+    else nodes.push(el('h1', {}, 'Final scores'), el('p', { className: 'question' }, top ? `${s.players.filter(p => p.score === top).map(p => p.name).join(' & ')} wins!` : 'Nobody scored. A true tie!'), scores());
     nodes.push(topicPicker(host));
     if (host) nodes.push(...startButtons());
     nodes.push(facePicker());
@@ -193,7 +200,11 @@ function render() {
   app.replaceChildren(...nodes.filter(Boolean));
   // Jump to the top for a new screen only, not when browsing topics.
   const screen = `${s.step}:${s.phase}`;
-  if (screen !== lastScreen) { lastScreen = screen; scrollTo(0, 0); }
+  if (screen !== lastScreen) {
+    lastScreen = screen; scrollTo(0, 0);
+    // A telephone book grows downward, so follow the newest page.
+    if (s.entries?.length > 1) app.querySelector('.page:last-of-type').scrollIntoView();
+  }
 }
 
 function lobbyForm() {
