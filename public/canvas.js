@@ -2,6 +2,7 @@
 import { el } from './ui.js';
 export const COLORS = ['#111111', '#e5383b', '#2b5cff', '#14a44d', '#ffb703', '#8b5a2b', '#ffffff'];
 export const MAX_POINTS = 6000;
+const BRUSHES = [['Thin', 5, 30], ['Medium', 12, 60], ['Thick', 30, 80]]; // name, pen width, eraser width
 
 function paint(ctx, [color, width, p]) {
   ctx.strokeStyle = COLORS[color]; ctx.lineWidth = width; ctx.lineCap = ctx.lineJoin = 'round';
@@ -18,7 +19,7 @@ export function picture(strokes) {
 export function sketchpad() {
   const canvas = el('canvas', { width: 1000, height: 1000, className: 'pad' });
   const ctx = canvas.getContext('2d');
-  let strokes = [], color = 0, live = null, points = 0;
+  let strokes = [], color = 0, brush = 1, live = null, points = 0;
   const redraw = () => { ctx.clearRect(0, 0, 1000, 1000); strokes.forEach(s => paint(ctx, s)); points = strokes.reduce((n, s) => n + s[2].length / 2, 0); };
   const at = e => {
     const r = canvas.getBoundingClientRect();
@@ -27,7 +28,7 @@ export function sketchpad() {
   canvas.onpointerdown = e => {
     if (live || points >= MAX_POINTS) return; // one finger at a time
     canvas.setPointerCapture(e.pointerId);
-    live = { id: e.pointerId, stroke: [color, color === 6 ? 60 : 12, at(e)] };
+    live = { id: e.pointerId, stroke: [color, BRUSHES[brush][color === 6 ? 2 : 1], at(e)] };
     strokes.push(live.stroke); points++; paint(ctx, live.stroke);
   };
   canvas.onpointermove = e => {
@@ -47,5 +48,9 @@ export function sketchpad() {
   tools.append(...swatches,
     el('button', { type: 'button', onclick: () => { strokes.pop(); live = null; redraw(); } }, 'Undo'),
     el('button', { type: 'button', onclick: () => { strokes = []; live = null; redraw(); } }, 'Clear'));
-  return { nodes: [canvas, tools], strokes: () => strokes };
+  const brushes = el('div', { className: 'tools brushes', role: 'group', ariaLabel: 'Brush size' });
+  brushes.append(...BRUSHES.map(([name], i) => el('button', { type: 'button', className: i === brush ? 'on' : '', ariaPressed: i === brush,
+    onclick: () => { brush = i; [...brushes.children].forEach((b, j) => { b.classList.toggle('on', i === j); b.ariaPressed = i === j; }); } },
+    el('i', { className: `dot dot${i}` }), name)));
+  return { nodes: [canvas, brushes, tools], strokes: () => strokes };
 }

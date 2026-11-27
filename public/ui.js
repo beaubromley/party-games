@@ -34,3 +34,8 @@ export function podium(entries, started = Date.now()) {
       timed(el('div', { className: 'block' }, el('strong', {}, ['1st', '2nd', '3rd'][i]), String(places[i])), started, when(i)))),
     Date.now() - started < 6000 && confetti(started, WINNER_AT + 0.3));
 }
+// A quick fade-and-rise when the screen changes.
+export function enterScreen(node) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  node.animate?.([{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'ease-out' });
+}

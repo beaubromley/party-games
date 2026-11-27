@@ -381,6 +381,25 @@ const room = (game, n) => {
   assert.deepEqual(rules.view(r, 'p0').awards.map(x => [x.title, x.names.join()]), [['Best Bluffer', 'P1'], ['Sharpest Detective', 'P1'], ['Most Gullible', 'P0,P2']]);
   assert.equal(r.night.p1.points, 3);
 }
+// Editing answers in every writing game, and only while writing is open.
+{
+  for (const game of ['bluff', 'majority', 'telephone', 'faceoff']) {
+    const r = room(game, 3);
+    rules.start(r, game === 'bluff' ? [{ question: 'q', answer: 'truth' }] : game === 'majority' ? { prompts: ['q'] } : game === 'faceoff' ? { sets: 1, prompts: ['a', 'b', 'c'] } : {});
+    const item = rules.view(r, 'p0').item;
+    assert.throws(() => rules.unsend(r, 'p0', item), /Nothing to edit/);
+    rules.submitFake(r, 'p0', 'frist', item);
+    const v = rules.view(r, 'p0');
+    assert.equal(game === 'faceoff' ? v.written[0].text : v.mine, 'frist');
+    assert.ok(!JSON.stringify(rules.view(r, 'p1')).includes('frist'), 'answers stay private');
+    rules.unsend(r, 'p0', item);
+    assert.ok(rules.waitingOn(r).includes('p0'));
+    const saved = JSON.parse(JSON.stringify(r)); // as stored in the database
+    rules.submitFake(saved, 'p0', 'first', item);
+    for (let guard = 0; saved.phase === 'writing'; guard++) { assert.ok(guard < 10); const id = rules.waitingOn(saved)[0]; rules.submitFake(saved, id, 'w' + id + guard, rules.view(saved, id).item); }
+    assert.throws(() => rules.unsend(saved, 'p0', item), /Too late/);
+  }
+}
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
@@ -501,7 +520,7 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     await g.goto(`${base}/play.html?game=${game}&code=${code}`);
     await g.getByPlaceholder('Your name').fill(['Bo', 'Cy'][i]); await click(g, 'Join room');
   }
-  await host.locator('li').nth(2).waitFor({ timeout: 8000 });
+  await host.locator('#recap li').nth(2).waitFor({ timeout: 8000 });
   await host.screenshot({ path: `/tmp/${game}-lobby.png`, fullPage: true });
   await click(host, { faceoff: 'Start: 1 round', majority: 'Start: 5 questions', telephone: 'Start passing' }[game]);
   const say = async (p, text) => {
@@ -511,7 +530,14 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   };
   if (game === 'faceoff') {
     for (const [i, p] of phones.entries()) {
-      for (const n of [1, 2]) { await p.getByText(`Your prompt ${n} of 2`).waitFor({ timeout: 8000 }); await say(p, `joke ${i} ${n}`); }
+      for (const n of [1, 2]) {
+        await p.getByText(`Your prompt ${n} of 2`).waitFor({ timeout: 8000 }); await say(p, `joke ${i} ${n}`);
+        if (i === 0 && n === 1) {
+          await click(p, 'Edit “joke 0 1”'); await p.getByText('Your prompt 1 of 2').waitFor({ timeout: 8000 });
+          assert.equal(await p.locator('input').inputValue(), 'joke 0 1');
+          await click(p, 'Send');
+        }
+      }
     }
     for (let m = 1; m <= 3; m++) {
       let voted = 0;
@@ -594,12 +620,25 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     await host.getByRole('heading', { name: 'Fan favorite', exact: true }).waitFor();
     await host.waitForTimeout(900); await host.screenshot({ path: '/tmp/favorite.png', fullPage: true });
     // Switch everyone to another game with a timer, without rejoining.
-    await host.getByText('Switch game (same room)').click(); await click(host, 'Switch to Majority Rules');
+    await host.getByText(/^Game options/).click(); await click(host, 'Switch to Majority Rules');
     for (const p of phones) await p.getByRole('heading', { name: 'Majority Rules' }).waitFor({ timeout: 8000 });
     await host.screenshot({ path: '/tmp/switched.png', fullPage: true });
-    await click(host, '60s'); await click(host, 'Start: 5 questions');
+    await host.getByRole('button', { name: '60s', exact: true }).click(); // the options stay open across redraws
+    await host.getByText('Game options (timer: 60s)').waitFor();
+    await click(host, 'Start: 5 questions');
     for (const p of phones) { await p.locator('.timer:visible').waitFor({ timeout: 8000 }); assert.match(await p.locator('.timer').textContent(), /^(1:00|0:\d\d)$/); }
     await say(guests[1], 'Dog'); await host.getByText('1 of 3 done').waitFor({ timeout: 8000 });
+    // Take it back, fix it, send it again.
+    await click(guests[1], 'Edit my answer');
+    await host.getByText('0 of 3 done').waitFor({ timeout: 8000 });
+    assert.equal(await guests[1].locator('input').inputValue(), 'Dog');
+    await say(guests[1], 'Dogs'); await host.getByText('1 of 3 done').waitFor({ timeout: 8000 });
+    // Losing signal shows a banner, and getting it back says so.
+    await guests[0].context().setOffline(true);
+    await guests[0].getByText('Connection lost. Reconnecting…').waitFor({ timeout: 8000 });
+    await guests[0].screenshot({ path: '/tmp/offline.png' });
+    await guests[0].context().setOffline(false);
+    await guests[0].getByText('Back online').waitFor({ timeout: 8000 });
     await host.screenshot({ path: '/tmp/timer.png', fullPage: true });
     await guests[1].reload(); await guests[1].getByText('Question 1 of 5').waitFor({ timeout: 8000 });
     assert.equal(await guests[1].evaluate(() => localStorage.getItem('name')), 'Cy');
@@ -622,7 +661,7 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     await g.goto(`${base}/play.html?game=doodle&code=${code}`);
     await g.getByPlaceholder('Your name').fill(['Bo', 'Cy', 'Di'][i]); await click(g, 'Join room');
   }
-  await host.locator('li').nth(3).waitFor({ timeout: 8000 });
+  await host.locator('#recap li').nth(3).waitFor({ timeout: 8000 });
   await click(host, 'Start drawing');
   const [bo, cy, di] = guests;
   await cy.locator('canvas.pad').waitFor(); await scribble(cy);
@@ -649,7 +688,13 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
 }
 const solo = await phone();
 await solo.goto(`${base}/draw.html`);
-await click(solo, 'Show my word'); await click(solo, 'Start drawing (60s)'); await scribble(solo);
+await click(solo, 'Show my word'); await click(solo, 'Start drawing (60s)');
+await solo.locator('.countdown').waitFor(); await solo.waitForTimeout(400); await solo.screenshot({ path: '/tmp/countdown.png' });
+await solo.locator('canvas.pad').waitFor();
+const width = () => solo.evaluate(() => { const d = document.querySelector('canvas.pad').getContext('2d').getImageData(0, 0, 1000, 1000).data; return d.filter((v, i) => i % 4 === 3 && v > 128).length; });
+await click(solo, 'Thin'); await scribble(solo); const thin = await width();
+await click(solo, 'Clear'); await click(solo, 'Thick'); await scribble(solo);
+assert.ok(await width() > thin * 3, 'thick lines are thicker');
 await solo.screenshot({ path: '/tmp/quick.png', fullPage: true });
 await click(solo, 'They got it!'); await solo.getByRole('button', { name: 'Add 1', exact: true }).first().click();
 assert.equal(await solo.locator('.team output').first().textContent(), '1');

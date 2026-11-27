@@ -1,4 +1,4 @@
-import { el, homeLink, podium, timed, WINNER_AT } from './ui.js';
+import { el, homeLink, podium, timed, enterScreen, WINNER_AT } from './ui.js';
 import { play, soundOn, setSound } from './sound.js';
 import { keepAwake } from './wake.js';
 import { savePicture } from './save.js';
@@ -24,6 +24,29 @@ const bubbles = el('div', { className: 'bubbles', role: 'status' });
 const cheers = el('div', { className: 'cheers', role: 'group', ariaLabel: 'React' }, REACTIONS.map((text, kind) => el('button', {
   onclick: async () => { try { apply(await api({ action: 'react', kind, ...me })); } catch (err) { note.textContent = err.message; } } }, text)));
 document.body.append(bubbles);
+const banner = el('p', { className: 'banner', role: 'alert', hidden: true });
+document.body.append(banner);
+let misses = 0, bannerTimer;
+function connection(ok) {
+  if (ok) {
+    if (banner.classList.contains('lost')) {
+      banner.className = 'banner'; banner.textContent = 'Back online';
+      bannerTimer = setTimeout(() => { banner.hidden = true; }, 2000);
+    }
+    misses = 0;
+  } else if (++misses >= 2) {
+    clearTimeout(bannerTimer);
+    banner.className = 'banner lost'; banner.textContent = 'Connection lost. Reconnecting…'; banner.hidden = false;
+  }
+}
+addEventListener('offline', () => { if (me) { misses = 1; connection(false); } });
+addEventListener('online', () => { if (me) { version = 0; poll(); } });
+// Collapsible sections that stay open across redraws.
+const opened = new Set();
+function fold(id, label, ...children) {
+  const panel = el('details', { open: opened.has(id), ontoggle: () => opened[panel.open ? 'add' : 'delete'](id) }, el('summary', {}, label), ...children);
+  return panel;
+}
 function showReactions() {
   const newest = state.reactions.at(-1)?.n ?? 0;
   // Joining or rejoining doesn't replay what was already said.
@@ -73,7 +96,7 @@ let faces = {}, facesKey = '';
 let draft = { step: 0, text: '' }; // typed answer, kept across redraws
 // Host controls live in one element that updates by itself, so changing them never wipes a drawing.
 const controls = el('div');
-let switching = false, nudged = '';
+let nudged = '';
 let controlsKey = '', managing = false, hostAway = false, pinged = 0;
 const FACE_SCREENS = ['lobby', 'reveal', 'done']; // screens with nothing half-typed to lose
 const faceImg = (id, extra = '') => faces[id] && el('img', { className: 'face ' + extra, src: faces[id], alt: '' });
@@ -143,17 +166,16 @@ async function api(body) {
   return data;
 }
 const button = (label, onclick, extra = '') => el('button', { className: 'big ' + extra, onclick }, label);
-// Host settings shown between games.
-function hostSetup() {
-  return [el('h2', {}, 'Timer'),
+// Host settings shown between games, tucked away under the start buttons.
+function gameOptions() {
+  const current = TIMER_CHOICES.find(([n]) => n === timerChoice)[1];
+  return fold('options', `Game options (timer: ${current.toLowerCase()})`,
+    el('h2', {}, 'Timer'),
     el('div', { className: 'chips', role: 'group', ariaLabel: 'Timer' }, TIMER_CHOICES.map(([n, text]) => el('button', { className: n === timerChoice ? 'on' : '', ariaPressed: n === timerChoice,
       onclick: () => { timerChoice = n; try { localStorage.setItem('timer', n); } catch {} render(); } }, text))),
-    el('p', { className: 'fine' }, 'A countdown to hurry people along. Nothing skips by itself.')];
-}
-function gameSwitcher() {
-  const panel = el('details', { open: switching, ontoggle: () => { switching = panel.open; } }, el('summary', {}, 'Switch game (same room)'),
-    Object.keys(HOW_TO).filter(id => id !== game).map(id => button(`Switch to ${titleOf(id)}`, () => { switching = false; send({ action: 'switch', game: id }); }, 'alt')));
-  return panel;
+    el('p', { className: 'fine' }, 'A countdown to hurry people along. Nothing skips by itself.'),
+    el('h2', {}, 'Switch game (same room)'),
+    Object.keys(HOW_TO).filter(id => id !== game).map(id => button(`Switch to ${titleOf(id)}`, () => send({ action: 'switch', game: id }), 'alt')));
 }
 function updateControls() {
   const host = state.you === state.host, playing = !['lobby', 'done'].includes(state.phase);
@@ -192,7 +214,7 @@ async function quit() {
   clearTimeout(timer); me = null;
   try { await api({ action: 'leave', ...mine }); } catch {}
 }
-function leave() { heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; switching = false; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function leave() { opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -209,12 +231,13 @@ async function poll() {
   try {
     const data = await api({ action: 'poll', ...mine, version });
     if (me !== mine) return;
+    connection(true);
     apply(data);
     ping();
   } catch (err) {
     if (me !== mine) return;
     if (/not found|not in this room/i.test(err.message)) { const ended = /not found/i.test(err.message); leave(); note.textContent = ended ? 'That room has ended.' : 'You are no longer in that room.'; return; }
-    waiting.textContent = 'Reconnecting…'; version = 0;
+    connection(false); version = 0;
   }
   clearTimeout(timer);
   timer = setTimeout(poll, 1500);
@@ -270,16 +293,17 @@ function render() {
   if (s.phase === 'lobby') {
     if (s.notice) nodes.push(el('p', { className: 'note error' }, s.notice));
     const link = `${location.origin}/play.html?game=${game}&code=${me.code}`;
-    nodes.push(el('h1', {}, title()), PARTY_GAMES[game] && el('p', {}, PARTY_GAMES[game].blurb),
-      el('section', { className: 'how' }, el('h2', {}, 'How to play'), el('ol', {}, HOW_TO[game].map(line => el('li', {}, line)))), el('p', {}, 'Room code'), el('p', { className: 'code' }, me.code),
+    nodes.push(el('h1', {}, title()),
+      fold('how', 'How to play', PARTY_GAMES[game] && el('p', {}, PARTY_GAMES[game].blurb), el('ol', { className: 'how' }, HOW_TO[game].map(line => el('li', {}, line)))),
+      el('p', {}, 'Room code'), el('p', { className: 'code' }, me.code),
       button('Share invite link', async () => {
         try { navigator.share ? await navigator.share({ url: link }) : (await navigator.clipboard.writeText(link), note.textContent = 'Link copied'); } catch {}
       }, 'alt'),
-      el('ul', { id: 'recap' }, s.players.map(p => el('li', {}, faceImg(p.id), p.name))), facePicker(), topicPicker(host));
-    if (host && s.players.length >= 2) nodes.push(...hostSetup(), ...startButtons());
+      el('ul', { id: 'recap' }, s.players.map(p => el('li', {}, faceImg(p.id), p.name))), topicPicker(host));
+    if (host && s.players.length >= 2) nodes.push(...startButtons());
     else nodes.push(el('p', {}, s.players.length < 2 ? 'Need at least 2 players.' : 'Waiting for the host to start.'));
-    if (host) nodes.push(gameSwitcher());
-    nodes.push(...nightBoard(host));
+    if (host) nodes.push(gameOptions());
+    nodes.push(fold('photo', 'Your photo', facePicker()), ...nightBoard(host));
   } else if (PARTY_GAMES[game] && s.phase !== 'done') {
     nodes.push(...partyScreen({ s, host, send, button, faceImg, scores, redraw: render, reveal }));
   } else if (s.phase === 'drawing') {
@@ -292,7 +316,10 @@ function render() {
   } else if (s.phase === 'writing') {
     nodes.push(el('p', {}, `Round ${s.index + 1} of ${s.total}`), ...subject());
     if (s.isArtist) nodes.push(el('p', { className: 'question' }, 'Your masterpiece! Sit back while they make up titles.'));
-    else if (s.sent) nodes.push(el('p', { className: 'question' }, 'Sent!'));
+    else if (s.sent) nodes.push(el('p', { className: 'question' }, 'Sent!'), button('Edit my answer', () => {
+      draft = { step: s.step, text: s.mine, hint: s.hint };
+      return send({ action: 'unsend' });
+    }, 'alt'));
     else {
       if (draft.step !== s.step) draft = { step: s.step, text: '' };
       if (s.hint && draft.hint !== s.hint) draft = { step: s.step, text: s.hint, hint: s.hint };
@@ -357,9 +384,9 @@ function render() {
         el('p', { className: 'fine' }, `${a.detail[0].toUpperCase()}${a.detail.slice(1)} (${a.times})`)))), ceremony.at, WINNER_AT + 1.2));
     nodes.push(...nightBoard(host));
     nodes.push(topicPicker(host));
-    if (host) nodes.push(...hostSetup(), el('h2', {}, 'Play again'), ...startButtons(), gameSwitcher());
+    if (host) nodes.push(el('h2', {}, 'Play again'), ...startButtons(), gameOptions());
     else nodes.push(el('p', {}, 'Waiting for the host to start another game.'));
-    nodes.push(facePicker());
+    nodes.push(fold('photo', 'Your photo', facePicker()));
   }
   const exit = s.phase === 'done'
     ? button('All games', async () => { await quit(); write(null); location.href = '/'; }, 'alt')
@@ -369,7 +396,7 @@ function render() {
     }, 'alt');
   if (['writing', 'drawing', 'voting'].includes(s.phase)) nodes.unshift(clock);
   if (['reveal', 'done'].includes(s.phase)) nodes.push(cheers);
-  nodes.push(controls, waiting, note, soundButton(), textSizeButton(), exit,
+  nodes.push(controls, waiting, note, el('div', { className: 'prefs' }, soundButton(), textSizeButton()), exit,
     game === 'bluff' && el('footer', {}, 'Trivia: ', el('a', { href: 'https://opentdb.com' }, 'Open Trivia Database'), ' (CC BY-SA 4.0), filtered, plus some written for this app.'));
   app.replaceChildren(...nodes.filter(Boolean));
   // Jump to the top for a new screen only, not when browsing topics.
@@ -377,7 +404,10 @@ function render() {
   if (screen !== lastScreen) {
     lastScreen = screen; scrollTo(0, 0);
     // A telephone book grows downward, so follow the newest page.
-    if (s.entries?.length > 1) app.querySelector('.page:last-of-type').scrollIntoView();
+    if (s.entries?.length > 1) {
+      const page = app.querySelector('.page:last-of-type');
+      page.scrollIntoView(); enterScreen(page);
+    } else enterScreen(app);
   }
 }
 

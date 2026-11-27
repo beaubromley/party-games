@@ -1,4 +1,4 @@
-import { el, homeLink } from './ui.js';
+import { el, homeLink, enterScreen } from './ui.js';
 import { sketchpad } from './canvas.js';
 import { shuffle } from './game.js';
 import { QUICK_WORDS } from './words.js';
@@ -10,7 +10,7 @@ keepAwake();
 
 const app = document.getElementById('app');
 let pile = [], timer;
-const show = (...nodes) => { app.replaceChildren(...nodes); scrollTo(0, 0); };
+const show = (...nodes) => { app.replaceChildren(...nodes); scrollTo(0, 0); enterScreen(app); };
 const soundLabel = () => `Sound: ${soundOn() ? 'on' : 'off'}`;
 const button = (label, onclick, extra = '') => el('button', { className: 'big ' + extra, onclick }, label);
 
@@ -23,7 +23,15 @@ function ready(message, points = 0) {
 function reveal() {
   if (!pile.length) pile = shuffle(QUICK_WORDS);
   const word = pile.pop();
-  show(el('p', {}, 'Only the drawer looks'), el('h1', {}, word), button('Start drawing (60s)', () => draw(word)), button('Different word', reveal, 'alt'));
+  show(el('p', {}, 'Only the drawer looks'), el('h1', {}, word), button('Start drawing (60s)', () => countdown(word)), button('Different word', reveal, 'alt'));
+}
+function countdown(word, n = 3) {
+  if (!n) return draw(word);
+  const number = el('p', { className: 'countdown', role: 'status' }, String(n));
+  show(el('p', { className: 'ready' }, 'Get ready to draw'), number);
+  play('tick');
+  number.animate?.([{ transform: 'scale(1.6)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: 350, easing: 'ease-out' });
+  timer = setTimeout(() => countdown(word, n - 1), 800);
 }
 function draw(word) {
   const pad = sketchpad(), clock = el('h1', {}, '60'), end = Date.now() + 60000;

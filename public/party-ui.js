@@ -28,6 +28,11 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
     return [el('form', { onsubmit: e => { e.preventDefault(); send({ action: 'fake', text: input.value, item: s.item }); } }, input, el('button', { className: 'big' }, 'Send')),
       extra && button('Give me an idea', () => { input.value = draft.text = extra[Math.floor(Math.random() * extra.length)]; }, 'alt')];
   };
+  // Pulls a sent answer back into the box.
+  const edit = (label, text, item) => button(label, () => {
+    draft = { key: `${s.you}:${s.step}:${item ?? ''}`, text };
+    return send({ action: 'unsend', item });
+  }, 'alt');
   const onward = label => host && button(label, () => send({ action: 'next' }));
   const nodes = [];
 
@@ -37,6 +42,7 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
       nodes.push(el('p', {}, round));
       if (s.sent) nodes.push(say('Both answers are in!'));
       else nodes.push(el('p', {}, `Your prompt ${s.number} of 2`), say(s.question), ...answerForm('Make them laugh', 60));
+      nodes.push(...s.written.map(w => edit(`Edit “${w.text}”`, w.text, w.item)));
     } else if (s.phase === 'voting') {
       nodes.push(el('p', {}, `${round}. Matchup ${s.matchup} of ${s.matchups}`), say(s.question));
       if (!s.canVote) nodes.push(say('This one is yours. Act natural.'));
@@ -54,7 +60,7 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
   } else if (s.game === 'majority') {
     nodes.push(el('p', {}, `Question ${s.index + 1} of ${s.total}`), say(s.question));
     if (s.phase === 'writing') {
-      if (s.sent) nodes.push(say('Sent! Did you think like the others?'));
+      if (s.sent) nodes.push(say('Sent! Did you think like the others?'), edit('Edit my answer', s.mine));
       else nodes.push(el('p', {}, 'What will most people say?'), ...answerForm('Your answer', 40));
     } else {
       if (picked && picked.step !== s.step) picked = null;
@@ -73,7 +79,7 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
     }
   } else if (s.phase === 'writing') {
     nodes.push(el('p', {}, `Turn ${s.index + 1} of ${s.total}`));
-    if (s.sent) nodes.push(say('Sent! Waiting to pass.'));
+    if (s.sent) nodes.push(say('Sent! Waiting to pass.'), edit('Edit my answer', s.mine));
     else if (!s.prev) nodes.push(say('Write something for the next player to draw.'), ...answerForm('A moose on roller skates', 80, DOODLE_PROMPTS));
     else nodes.push(picture(s.prev.strokes), say('What is this?'), ...answerForm('Describe the drawing', 80));
   } else if (s.phase === 'drawing') {

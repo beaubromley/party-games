@@ -1,6 +1,7 @@
 import { tiltDetector, shuffle, roundSeconds } from './game.js';
 import { scoreboard } from './teams.js';
 import { soundOn, setSound } from './sound.js';
+import { enterScreen } from './ui.js';
 
 const $ = id => document.getElementById(id);
 const piles = {};            // unused cards per deck, so rounds don't repeat
@@ -10,6 +11,7 @@ function show(id) {
   for (const s of ['home', 'preview', 'stage', 'results']) $(s).hidden = s !== id;
   if (id === 'home') $('homeTeams').replaceChildren(scoreboard());
   scrollTo(0, 0);
+  if (id !== 'stage') enterScreen($(id)); // the sideways stage has its own transform
 }
 
 function beep(freq, dur = 0.15) {
@@ -43,6 +45,8 @@ async function start(d) {
   const tick = () => {
     if (n === 0) return play();
     $('clock').textContent = 'Place on forehead'; $('card').textContent = n--; beep(440);
+    $('stage').className = 'count';
+    $('card').animate?.([{ transform: 'scale(1.6)', opacity: 0 }, { transform: 'scale(1)', opacity: 1 }], { duration: 350, easing: 'ease-out' });
     timer = setTimeout(tick, 1000);
   };
   tick();
