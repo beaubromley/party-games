@@ -13,6 +13,8 @@ const asked = params.get('game');
 let game = asked === 'doodle' || Object.hasOwn(PARTY_GAMES, asked) ? asked : 'bluff';
 const read = () => { try { return JSON.parse(localStorage.getItem('room')); } catch { return null; } };
 const write = v => { try { v ? localStorage.setItem('room', JSON.stringify(v)) : localStorage.removeItem('room'); } catch {} };
+const readLast = () => { try { return JSON.parse(localStorage.getItem('last')); } catch { return null; } };
+const writeLast = v => { try { v ? localStorage.setItem('last', JSON.stringify(v)) : localStorage.removeItem('last'); } catch {} };
 let topic = 'trivia';
 let preview = null; // { topic, samples }
 let lastScreen = '';
@@ -110,7 +112,7 @@ const HOW_TO = {
   doodle: ['Everyone secretly draws a prompt.', 'Make up titles for each drawing.', 'Find the real title and fool others with yours.'],
   faceoff: ['Answer two silly prompts.', 'Two answers go head to head and everyone else votes.', 'More votes, more points. A second round counts double.'],
   majority: ['Everyone answers the same question.', 'Answer what you think most people will say.', 'The most common answer scores.'],
-  telephone: ['Write a phrase, then pass it on.', 'The next player draws it, the one after describes the drawing, and so on.', 'Read the books together and pick a favorite drawing.'],
+  telephone: ['Write a phrase, then pass it on.', 'The next player draws it, the one after describes the drawing, and so on.', 'Read every book together, then vote for a favorite drawing.'],
 };
 const soundButton = () => {
   const fallback = state.you === state.host, on = soundOn(fallback);
@@ -235,6 +237,10 @@ async function ping() {
     if (me === mine && state) { hostAway = data.hostAway; updateControls(); }
   } catch {}
 }
+function remember() {
+  const mine = state?.players.find(p => p.id === state.you);
+  if (me && mine) writeLast({ code: me.code, name: mine.name, game });
+}
 // Tells the room, so the game can carry on without this phone.
 async function quit() {
   const mine = me;
@@ -263,7 +269,7 @@ async function poll() {
     ping();
   } catch (err) {
     if (me !== mine) return;
-    if (/not found|not in this room/i.test(err.message)) { const ended = /not found/i.test(err.message); leave(); note.textContent = ended ? 'That room has ended.' : 'You are no longer in that room.'; return; }
+    if (/not found|not in this room/i.test(err.message)) { const ended = /not found/i.test(err.message); if (ended) writeLast(null); else remember(); leave(); note.textContent = ended ? 'That room has ended.' : 'You are no longer in that room.'; return; }
     connection(false); version = 0;
   }
   clearTimeout(timer);
@@ -284,7 +290,7 @@ function apply(data) {
   waiting.replaceChildren(...state.progress ? [el('span', {}, `${done} of ${state.progress.length} done`),
     el('span', { className: 'who-done' }, state.progress.map(p => el('span', { className: p.done ? 'done' : '', ariaLabel: `${p.name}: ${p.done ? 'done' : 'still going'}` }, p.name)))] : []);
   // Only rebuild when the screen really changes, so a half-typed answer or drawing survives polling.
-  const key = [state.game, state.step, state.sent, state.item, state.favorite, state.highlights.latest, state.highlights.count, state.night.map(p => p.name + p.points).join(), state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
+  const key = [state.game, state.step, state.sent, state.item, state.favorite, state.highlights.latest, state.highlights.count, state.canVote, JSON.stringify(state.likes), state.night.map(p => p.name + p.points).join(), state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
     FACE_SCREENS.includes(state.phase) && state.players.map(p => [p.id, p.face]).join() + state.host,
     state.requests.map(r => r.id + r.topic).join()].join(':');
   if (key !== shown) {
@@ -306,6 +312,14 @@ function render() {
     ? climbing(s.players, s.gains ?? {}, reveal.at, 0.2 + order * reveal.gap + 0.5, p => faceImg(p.id))
     : el('ol', { id: 'recap' }, [...s.players].sort((a, b) => b.score - a.score)
       .map(p => el('li', {}, faceImg(p.id), `${p.name}: ${p.score}${s.gains?.[p.id] ? ` (+${s.gains[p.id]})` : ''}`)));
+  // Thumbs-up for an answer on the results screen.
+  const like = authors => {
+    if (!authors.length) return false;
+    const fans = new Set(authors.flatMap(a => s.likes?.[a] ?? [])), mine = authors.includes(s.you), on = fans.has(s.you);
+    if (mine) return fans.size > 0 && el('p', { className: 'liked' }, `${fans.size} ${fans.size === 1 ? 'like' : 'likes'}`);
+    return el('button', { className: 'like' + (on ? ' on' : ''), ariaPressed: on, onclick: () => send({ action: 'like', target: authors[0] }) },
+      `${on ? 'Liked' : 'Like'}${fans.size ? ` (${fans.size})` : ''}`);
+  };
   const subject = () => [s.question && el('p', { className: 'question' }, s.question), s.drawing && picture(s.drawing)];
   if (s.phase === 'reveal') {
     const key = [me.code, game, s.index, s.round, s.matchup, s.bookNumber].join(':');
@@ -320,22 +334,24 @@ function render() {
     : game === 'bluff'
     ? [3, 5, 8].map(n => button(`Start: ${n} questions`, () => send({ action: 'start', topic, rounds: n, timer: timerChoice })))
     : [button('Start drawing', () => send({ action: 'start', timer: timerChoice }))];
+  // The same code works all night, for latecomers and anyone who dropped out.
+  const invite = () => [el('p', {}, 'Room code'), el('p', { className: 'code' }, me.code),
+    button('Share invite link', async () => {
+      const link = `${location.origin}/play.html?game=${game}&code=${me.code}`;
+      try { navigator.share ? await navigator.share({ url: link }) : (await navigator.clipboard.writeText(link), note.textContent = 'Link copied'); } catch {}
+    }, 'alt')];
   if (s.phase === 'lobby') {
     if (s.notice) nodes.push(el('p', { className: 'note error' }, s.notice));
-    const link = `${location.origin}/play.html?game=${game}&code=${me.code}`;
     nodes.push(el('h1', {}, title()),
       fold('how', 'How to play', PARTY_GAMES[game] && el('p', {}, PARTY_GAMES[game].blurb), el('ol', { className: 'how' }, HOW_TO[game].map(line => el('li', {}, line)))),
-      el('p', {}, 'Room code'), el('p', { className: 'code' }, me.code),
-      button('Share invite link', async () => {
-        try { navigator.share ? await navigator.share({ url: link }) : (await navigator.clipboard.writeText(link), note.textContent = 'Link copied'); } catch {}
-      }, 'alt'),
+      ...invite(),
       el('ul', { id: 'recap' }, s.players.map(p => el('li', {}, faceImg(p.id), p.name))), topicPicker(host));
     if (host && s.players.length >= 2) nodes.push(...startButtons());
     else nodes.push(el('p', {}, s.players.length < 2 ? 'Need at least 2 players.' : 'Waiting for the host to start.'));
     if (host) nodes.push(gameOptions());
     nodes.push(fold('photo', 'Your photo', facePicker()), ...nightBoard(host), ...highlightReel());
   } else if (PARTY_GAMES[game] && s.phase !== 'done') {
-    nodes.push(...partyScreen({ s, host, send, button, faceImg, scores, redraw: render, reveal }));
+    nodes.push(...partyScreen({ s, host, send, button, faceImg, scores, redraw: render, reveal, like }));
   } else if (s.phase === 'drawing') {
     if (s.sent) nodes.push(el('h1', {}, 'Nice art!'));
     else {
@@ -378,7 +394,7 @@ function render() {
       s.drawing && button('Save drawing', () => savePicture([{ text: s.options.find(o => o.truth).text, big: true }, { strokes: s.drawing }, { text: `Drawn by ${s.artist}` }], 'doodle'), 'alt'),
       ...ranked.map((o, i) => timed(el('p', { className: 'note card' + (o.truth ? ' truth' : '') },
         ...o.authorIds.map(id => faceImg(id)), el('b', {}, `${o.truth ? 'REAL: ' : 'Fake: '}${o.text}`), el('br'),
-        o.truth ? '' : `by ${o.authors.join(' & ')}${o.helped.length ? ` (AI help: ${o.helped.join(', ')})` : ''} · `, o.voters.length ? `picked by ${o.voters.join(', ')}` : 'nobody picked it'), reveal.at, 0.2 + i * reveal.gap)),
+        o.truth ? '' : `by ${o.authors.join(' & ')}${o.helped.length ? ` (AI help: ${o.helped.join(', ')})` : ''} · `, o.voters.length ? `picked by ${o.voters.join(', ')}` : 'nobody picked it', like(o.authorIds)), reveal.at, 0.2 + i * reveal.gap)),
       fooledBy.length > 0 && after(el('section', { className: 'bluffed' },
         el('h2', {}, `Bluffed by ${fooledBy.map(p => p.name).join(' & ')}!`), ...fooledBy.map(p => faceImg(p.id, 'large')))),
       after(scores(ranked.length)));
@@ -412,18 +428,18 @@ function render() {
     if (s.awards?.length) nodes.push(timed(el('section', { className: 'awards' }, el('h2', {}, 'Awards'),
       s.awards.map(a => el('div', { className: 'answer' }, el('b', {}, a.title), el('p', {}, a.names.join(' & ')),
         el('p', { className: 'fine' }, `${a.detail[0].toUpperCase()}${a.detail.slice(1)} (${a.times})`)))), ceremony.at, WINNER_AT + 1.2));
-    nodes.push(...nightBoard(host), ...highlightReel());
+    nodes.push(...nightBoard(host), ...highlightReel(), ...invite());
     nodes.push(topicPicker(host));
-    if (host) nodes.push(el('h2', {}, 'Play again'), ...startButtons(), gameOptions());
+    if (host) nodes.push(el('h2', {}, 'Play again'), ...startButtons(), button('Back to lobby', () => send({ action: 'restart' }), 'alt'), gameOptions());
     else nodes.push(el('p', {}, 'Waiting for the host to start another game.'));
     nodes.push(fold('photo', 'Your photo', facePicker()));
   }
-  const exit = s.phase === 'done'
-    ? button('All games', async () => { await quit(); write(null); location.href = '/'; }, 'alt')
-    : button('Leave game', async () => {
-      if (!await ask('Leave this game?', 'The others carry on without you.', 'Leave game')) return;
-      await quit(); leave();
-    }, 'alt');
+  const exit = button('Leave party', async () => {
+    if (!await ask('Leave the party?', `You can come back with the code ${me.code}.`, 'Leave party')) return;
+    remember();
+    await quit(); leave();
+  }, 'alt');
+  if (!['lobby', 'done'].includes(s.phase)) nodes.push(el('p', { className: 'fine party-code' }, `Room code ${me.code}`));
   if (['writing', 'drawing', 'voting'].includes(s.phase)) nodes.unshift(clock);
   if (['reveal', 'done'].includes(s.phase)) nodes.push(cheers);
   nodes.push(controls, waiting, note, el('div', { className: 'prefs' }, soundButton(), textSizeButton()), exit,
@@ -453,15 +469,24 @@ function lobbyForm() {
       const data = await api(body);
       try { localStorage.setItem('name', body.name.trim()); } catch {}
       me = { code: data.code, playerId: data.playerId, secret: data.secret, game: data.state.game }; write(me);
+      writeLast(null);
       version = 0; shown = ''; apply(data); poll();
       const face = savedFace();
       if (face) api({ action: 'face', data: face, ...me }).then(apply).catch(() => {});
-    } catch (err) { note.textContent = err.message; }
+    } catch (err) {
+      note.textContent = err.message;
+      if (/not found/i.test(err.message) && body.code === readLast()?.code) { writeLast(null); back?.remove(); }
+    }
     finally { busy = false; }
   };
-  app.replaceChildren(homeLink(), el('h1', {}, title()), name,
+  // Still in a party (picked another game from the menu), or stepped out of one.
+  const saved = read(), left = readLast(), invited = params.get('code');
+  const back = saved ? button(`Return to party ${saved.code}`, () => {
+    me = saved; version = 0; shown = ''; app.replaceChildren(el('p', {}, 'Rejoining…'), waiting, note); poll();
+  }) : left && (!invited || invited.toUpperCase() === left.code) ? button(`Rejoin party ${left.code}`, () => enter({ action: 'join', code: left.code, name: left.name })) : null;
+  app.replaceChildren(...[homeLink(), el('h1', {}, title()), back, name,
     button('Create a room', () => enter({ action: 'create', game, name: name.value })),
-    code, button('Join room', () => enter({ action: 'join', code: code.value, name: name.value }), 'alt'), note);
+    code, button('Join room', () => enter({ action: 'join', code: code.value, name: name.value }), 'alt'), note].filter(Boolean));
 }
 
 // A locked phone resumes where it left off.

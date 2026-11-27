@@ -19,6 +19,7 @@
 <main class="menu">
   <h1>Party Games</h1>
   <p>For ages 10 and up</p>
+  <a id="party" hidden></a>
   <a href="/forehead.html">Forehead<small>One phone. Guess the word from clues.</small></a>
   <a href="/draw.html">Quick Draw<small>One phone. Draw it, everyone shouts guesses.</small></a>
   <a href="/play.html?game=bluff">Bluff<small>2–12 phones. Fake answers to real trivia.</small></a>
@@ -26,9 +27,17 @@
   <a href="/play.html?game=faceoff">Face-Off<small>2–12 phones. Funniest answer wins the vote.</small></a>
   <a href="/play.html?game=majority">Majority Rules<small>2–12 phones. Score by matching the crowd.</small></a>
   <a href="/play.html?game=telephone">Telephone Doodle<small>2–12 phones. Write, draw, guess, pass it on.</small></a>
+  <a href="/watch.html">Watch Quick Draw<small>See the drawing on your own phone.</small></a>
   <p id="install" hidden>For full screen with no Safari bar: tap Share, then <b>Add to Home Screen</b>, and open it from the new icon. Joining a friend's game there? Type the room code.</p>
 </main>
 <script>
+try {
+  const room = JSON.parse(localStorage.getItem('room'));
+  if (room?.code) {
+    const link = document.getElementById('party');
+    link.href = `/play.html?game=${encodeURIComponent(room.game)}`; link.textContent = `Back to your party (${room.code})`; link.hidden = false;
+  }
+} catch {}
 document.querySelector('.menu').append(textSizeButton());
 document.getElementById('install').hidden = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 </script>

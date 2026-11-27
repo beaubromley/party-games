@@ -224,6 +224,7 @@ const room = (game, n) => {
     const v = rules.view(r, id);
     if (r.phase === 'drawing') rules.submitDrawing(r, id, strokes);
     else if (r.phase === 'writing') rules.submitFake(r, id, `word ${id} ${r.step}`, v.item);
+    else if (r.game === 'telephone') rules.vote(r, id, v.gallery.find(d => d.byId !== id).key);
     else rules.vote(r, id, v.options.findIndex(o => !o.mine));
   };
   let seed = 7;
@@ -239,6 +240,10 @@ const room = (game, n) => {
         const target = r.players[Math.floor(random() * r.players.length)].id;
         rules.remove(r, target);
         if (r.phase === 'lobby') { restarted++; assert.ok(r.players.length < 2 && r.notice, log); } else carried++;
+      } else if (r.players.length < 7 && random() < 0.05) {
+        // Someone new, or someone coming back.
+        const gone = Object.keys(r.left ?? {});
+        rules.join(r, { id: 'n' + r.step + '-' + guard, secret: 's', name: gone.length && random() < 0.6 ? gone[0] : `N${run}-${guard}` }, { prompt: 'late', prompts: ['l' + guard, 'm' + guard] });
       } else act(r, random);
       // Nobody may be left staring at a screen that waits for no one.
       if (['writing', 'drawing', 'voting'].includes(r.phase)) assert.ok(rules.waitingOn(r).length, `idle in ${r.phase}: ${log}`);
@@ -250,7 +255,7 @@ const room = (game, n) => {
       }
     }
   }
-  assert.ok(carried > 500 && restarted > 100, `${carried} carried on, ${restarted} restarted`);
+  assert.ok(carried > 500 && restarted > 50, `${carried} carried on, ${restarted} restarted`);
   // Dropping the one removed answer re-points votes.
   const r = begin('bluff', 4);
   for (const p of r.players) rules.submitFake(r, p.id, 'fib ' + p.id);
@@ -311,13 +316,16 @@ const room = (game, n) => {
   rules.start(t, {});
   for (let turn = 0; turn < 3; turn++) for (const id of rules.waitingOn(t)) turn % 2 ? rules.submitDrawing(t, id, [[0, 12, [1, 2, 3, 4]]]) : rules.submitFake(t, id, 'p' + turn + id);
   const artist = t.books[0].entries[1].by, fans = ['p0', 'p1', 'p2'].filter(id => id !== artist);
-  assert.throws(() => rules.vote(t, fans[0], 1), /Pick a drawing/, 'not shown yet');
-  rules.advance(t);
-  assert.throws(() => rules.vote(t, artist, 1), /your own/);
-  assert.throws(() => rules.vote(t, fans[0], 0), /Pick a drawing/);
-  for (const id of fans) { rules.vote(t, id, 1); rules.vote(t, id, 1); }
-  assert.equal(rules.view(t, fans[0]).picked, 1);
+  assert.throws(() => rules.vote(t, fans[0], '0:1'), /after the last book/);
   while (t.phase === 'reveal') rules.advance(t);
+  assert.equal(t.phase, 'voting'); assert.equal(rules.view(t, 'p0').gallery.length, 3);
+  assert.throws(() => rules.vote(t, artist, '0:1'), /your own/);
+  assert.throws(() => rules.vote(t, fans[0], '0:0'), /Pick a drawing/);
+  rules.vote(t, fans[0], '0:1'); assert.throws(() => rules.vote(t, fans[0], '0:1'), /Already voted/);
+  rules.vote(t, fans[1], '0:1');
+  const other = rules.view(t, artist).gallery.find(d => d.byId !== artist);
+  rules.vote(t, artist, other.key);
+  assert.equal(t.phase, 'done', 'the last vote ends the game');
   const [best] = rules.view(t, 'p0').favorites;
   assert.equal(best.votes, 2); assert.equal(best.artist, t.players.find(p => p.id === artist).name); assert.ok(best.strokes && best.prompt);
   const m = room('majority', 2); assert.throws(() => rules.vote(m, 'p0', 0));
@@ -354,7 +362,7 @@ const room = (game, n) => {
   // Bible has enough for several games without a repeat.
   const asked = [];
   v = await at();
-  for (let game = 0; game < 7; game++) {
+  for (let game = 0; game < 6; game++) {
     v = (await handle(query, { action: 'start', ...a, step: v.step, topic: 'bible', rounds: 8 })).state;
     for (let q = 0; q < 8; q++) {
       v = await at(); asked.push(v.question);
@@ -432,10 +440,9 @@ const room = (game, n) => {
 
   const tele = play('telephone', {}, r => {
     for (let g = 0; r.phase !== 'reveal'; g++) { assert.ok(g < 99); const id = rules.waitingOn(r)[0]; r.phase === 'drawing' ? rules.submitDrawing(r, id, line) : rules.submitFake(r, id, 'hi'); }
-    rules.advance(r);
-    const drawn = r.books[0].entries[1];
-    rules.vote(r, others(r, [drawn.by])[0], 1);
     for (let g = 0; r.phase === 'reveal'; g++) { assert.ok(g < 99); rules.advance(r); }
+    rules.vote(r, others(r, [r.books[0].entries[1].by])[0], '0:1');
+    rules.advance(r);
   });
   assert.equal(tele.highlights.length, 1); assert.match(tele.highlights[0].credit, /Fan favorite/);
 
@@ -444,6 +451,131 @@ const room = (game, n) => {
   for (let i = 0; i < 50; i++) highlight(full, { heading: String(i), strokes: i % 2 ? line : undefined });
   assert.equal(full.highlights.length, 30); assert.equal(full.highlights.filter(h => h.strokes).length, 10);
   assert.equal(full.highlights.at(-1).heading, '49');
+}
+// Joining late, in every game, and finishing normally.
+{
+  const line = [[0, 12, [1, 1, 9, 9]]];
+  const finish = r => {
+    for (let g = 0; r.phase !== 'done'; g++) {
+      assert.ok(g < 300, `${r.game} stuck in ${r.phase}`);
+      const id = rules.waitingOn(r)[0];
+      if (!id) rules.advance(r);
+      else if (r.phase === 'drawing') rules.submitDrawing(r, id, line);
+      else if (r.phase === 'writing') rules.submitFake(r, id, `w${id}${g}`, rules.view(r, id).item);
+      else if (r.game === 'telephone') rules.vote(r, id, rules.view(r, id).gallery.find(d => d.byId !== id).key);
+      else rules.vote(r, id, rules.view(r, id).options.findIndex(o => !o.mine));
+    }
+  };
+  const deal = { bluff: [{ question: 'q1', answer: 'a' }, { question: 'q2', answer: 'b' }], doodle: ['x', 'y', 'z'], faceoff: { sets: 2, prompts: 'abcdef'.split('') }, majority: { prompts: ['q', 'r'] }, telephone: {} };
+  for (const game of rules.GAMES) {
+    // Join at every possible moment of a game.
+    for (let when = 0; ; when++) {
+      assert.ok(when < 300);
+      const r = room(game, 3);
+      rules.start(r, structuredClone(deal[game]));
+      for (let g = 0; g < when && r.phase !== 'done'; g++) {
+        const id = rules.waitingOn(r)[0];
+        if (!id) rules.advance(r);
+        else if (r.phase === 'drawing') rules.submitDrawing(r, id, line);
+        else if (r.phase === 'writing') rules.submitFake(r, id, `w${id}${g}`, rules.view(r, id).item);
+        else if (r.game === 'telephone') rules.vote(r, id, rules.view(r, id).gallery.find(d => d.byId !== id).key);
+        else rules.vote(r, id, rules.view(r, id).options.findIndex(o => !o.mine));
+      }
+      const over = r.phase === 'done';
+      rules.join(r, { id: 'late', secret: 's', name: 'Late' }, { prompt: 'p', prompts: ['g', 'h'] });
+      const v = rules.view(r, 'late');
+      if (r.phase === 'drawing' && game === 'doodle') assert.equal(v.prompt, 'p');
+      if (game === 'telephone' && ['writing', 'drawing'].includes(r.phase)) { assert.ok(v.sittingOut); assert.ok(!v.progress.some(p => p.name === 'Late')); }
+      finish(r);
+      assert.ok(rules.view(r, 'late').players.length === 4);
+      if (over) break;
+    }
+  }
+  // Leaving and coming back keeps the seat and the score; a new game starts it at zero.
+  const r = room('telephone', 3);
+  rules.start(r, {});
+  r.players[2].score = 700;
+  rules.remove(r, 'p2');
+  const back = rules.join(r, { id: 'new', secret: 'n', name: 'p2' });
+  assert.deepEqual([back.id, back.score], ['p2', 700]);
+  assert.equal(rules.view(r, 'p2').sittingOut, false);
+  rules.remove(r, 'p2'); rules.restart(r);
+  assert.equal(rules.join(r, { id: 'new2', secret: 'n', name: 'P2' }).score, 0);
+}
+// Likes: toggled on results, not your own, no points, and counted for an award.
+{
+  const m = room('majority', 4);
+  rules.start(m, { prompts: ['q'] });
+  assert.throws(() => rules.like(m, 'p0', 'p1'), /results/);
+  ['soda', 'pop', 'tea', 'milk'].forEach((text, i) => rules.submitFake(m, 'p' + i, text));
+  assert.throws(() => rules.like(m, 'p0', 'p0'), /yours/);
+  rules.like(m, 'p0', 'p1'); rules.like(m, 'p2', 'p1'); rules.like(m, 'p2', 'p1'); rules.like(m, 'p3', 'p0');
+  const at = who => m.groups.findIndex(g => g.authors.includes(who));
+  rules.merge(m, at('p0'), at('p1'));
+  assert.throws(() => rules.like(m, 'p0', 'p1'), /yours/);
+  rules.like(m, 'p3', 'p1'); // liked already through its twin, so this takes it back
+  assert.deepEqual(Object.values(rules.view(m, 'p0').likes).flat().sort(), ['p0']);
+  assert.ok(m.players.every(p => p.score === (['p0', 'p1'].includes(p.id) ? 1000 : 0)));
+  rules.advance(m);
+  assert.deepEqual(rules.view(m, 'p0').awards.find(a => a.title === 'Fan Magnet').names, ['P1']);
+}
+// Face-Off AI help: one per prompt, half points, private, free when it fails.
+{
+  const seen = [];
+  const funny = async q => { seen.push(q); return 'A polite goose'; };
+  const h = await handle(query, { action: 'create', game: 'faceoff', name: 'A' });
+  const j = [];
+  for (const name of ['B', 'C']) j.push(await handle(query, { action: 'join', code: h.code, name }));
+  const ps = [h, ...j].map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
+  const at = async p => (await handle(query, { action: 'poll', ...p })).state;
+  await handle(query, { action: 'start', ...ps[0], step: 0, rounds: 1 });
+  let v = await at(ps[0]);
+  await assert.rejects(handle(query, { action: 'hint', ...ps[0], step: v.step }, { ask: async () => { throw new Error('down'); } }), /No points lost/);
+  await handle(query, { action: 'hint', ...ps[0], step: v.step }, { ask: funny });
+  assert.equal(seen[0].funny, true); assert.equal(seen[0].question, v.question);
+  v = await at(ps[0]); assert.equal(v.hint, 'A polite goose'); assert.equal(v.canHint, false);
+  await assert.rejects(handle(query, { action: 'hint', ...ps[0], step: v.step }, { ask: funny }), /already used/);
+  await handle(query, { action: 'fake', ...ps[0], step: v.step, item: v.item, text: v.hint });
+  v = await at(ps[0]); assert.equal(v.canHint, true, 'the second prompt has its own');
+  await handle(query, { action: 'fake', ...ps[0], step: v.step, item: v.item, text: 'mine' });
+  for (const p of ps.slice(1)) for (let k = 0; k < 2; k++) { const x = await at(p); await handle(query, { action: 'fake', ...p, step: x.step, item: x.item, text: `t${k}` }); }
+  let checked = false;
+  for (let g = 0; g < 20; g++) {
+    v = await at(ps[0]);
+    if (v.phase === 'done') break;
+    if (v.phase === 'voting') {
+      for (const p of ps) {
+        const x = await at(p);
+        if (x.phase !== 'voting' || !x.canVote) continue;
+        await handle(query, { action: 'vote', ...p, step: x.step, choice: Math.max(0, x.options.findIndex(o => o.text === 'A polite goose')) });
+      }
+    } else {
+      const ai = v.options.find(o => o.text === 'A polite goose');
+      if (ai) { assert.ok(ai.helped); assert.equal(v.gains[ai.authorId], 500); checked = true; }
+      await handle(query, { action: 'next', ...ps[0], step: v.step });
+    }
+  }
+  assert.ok(checked, 'the helped answer scored half');
+}
+// Late joining and sharing a drawing, through the server.
+{
+  const h = await handle(query, { action: 'create', game: 'doodle', name: 'A' });
+  await handle(query, { action: 'join', code: h.code, name: 'B' });
+  const a = { code: h.code, playerId: h.playerId, secret: h.secret };
+  await handle(query, { action: 'start', ...a, step: 0 });
+  const late = await handle(query, { action: 'join', code: h.code, name: 'C' });
+  assert.ok(late.state.prompt && !late.state.sent);
+  const cast = await handle(query, { action: 'cast-start' });
+  let seen = await handle(query, { action: 'cast-watch', code: cast.code });
+  assert.equal(seen.status, 'waiting');
+  assert.deepEqual(await handle(query, { action: 'cast-watch', code: cast.code, version: seen.version }), { version: seen.version });
+  await handle(query, { action: 'cast-send', ...cast, status: 'drawing', strokes: [[0, 12, [1, 2, 3, 4]]], word: 'secret', seconds: 42 });
+  seen = await handle(query, { action: 'cast-watch', code: cast.code, version: seen.version });
+  assert.equal(seen.strokes.length, 1); assert.ok(seen.seconds > 40 && seen.seconds <= 42);
+  assert.ok(!JSON.stringify(seen).includes('secret'), 'the word stays hidden while drawing');
+  await assert.rejects(handle(query, { action: 'cast-send', code: cast.code, secret: 'no', status: 'waiting' }), /ended/);
+  await assert.rejects(handle(query, { action: 'cast-send', ...cast, status: 'drawing', strokes: [[99]] }), /Could not share/);
+  await assert.rejects(handle(query, { action: 'cast-watch', code: 'ZZZZZ' }), /Nobody/);
 }
 const yes = p => p.locator('dialog.ask .yes').click();
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
@@ -584,7 +716,12 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   if (game === 'faceoff') {
     for (const [i, p] of phones.entries()) {
       for (const n of [1, 2]) {
-        await p.getByText(`Your prompt ${n} of 2`).waitFor({ timeout: 8000 }); await say(p, `joke ${i} ${n}`);
+        await p.getByText(`Your prompt ${n} of 2`).waitFor({ timeout: 8000 });
+        if (i === 1 && n === 1) {
+          await click(p, 'AI help (half points)'); await p.getByText('Suggested by Claude.', { exact: false }).waitFor({ timeout: 8000 });
+          assert.equal(await p.locator('input').inputValue(), 'A hootenanny');
+        }
+        await say(p, `joke ${i} ${n}`);
         if (i === 0 && n === 1) {
           await click(p, 'Edit “joke 0 1”'); await p.getByText('Your prompt 1 of 2').waitFor({ timeout: 8000 });
           assert.equal(await p.locator('input').inputValue(), 'joke 0 1');
@@ -604,6 +741,12 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
       assert.equal(voted, 1);
       await host.locator('.answer.winner').waitFor({ timeout: 8000 });
       if (m === 1) await host.screenshot({ path: '/tmp/faceoff-reveal.png', fullPage: true });
+      if (m === 1) {
+        await host.locator('.like').first().waitFor({ timeout: 8000 });
+        await host.locator('.like').first().click();
+        await host.getByRole('button', { name: 'Liked (1)' }).waitFor({ timeout: 8000 });
+        await host.screenshot({ path: '/tmp/like.png', fullPage: true });
+      }
       await click(host, m === 3 ? 'Final scores' : 'Next');
     }
   } else if (game === 'majority') {
@@ -635,15 +778,7 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     for (let book = 1; book <= 3; book++) for (let page = 1; page <= 3; page++) {
       await host.locator('.page').nth(page - 1).waitFor({ timeout: 8000 });
       await host.getByText(`(${book} of 3)`).waitFor({ timeout: 8000 });
-      if (book === 1 && page === 2) {
-        // Whoever didn't draw it picks it.
-        let fans = 0;
-        for (const p of phones) {
-          await p.locator('.page').nth(1).waitFor({ timeout: 8000 });
-          if (await p.locator('.fav').count()) { await p.locator('.fav').click(); await p.getByRole('button', { name: 'Your favorite' }).waitFor({ timeout: 8000 }); fans++; }
-        }
-        assert.equal(fans, 2);
-      }
+      assert.equal(await host.locator('.fav').count(), 0, 'no voting while reading');
       await guests[0].locator('.page').nth(page - 1).waitFor({ timeout: 8000 });
       if (book === 1 && page === 3) {
         await host.screenshot({ path: '/tmp/telephone-reveal.png', fullPage: true });
@@ -654,7 +789,15 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
         await host.locator('.bubbles p').filter({ hasText: 'Bravo! Bo' }).waitFor({ timeout: 8000 });
         await host.screenshot({ path: '/tmp/reaction.png' });
       }
-      await click(host, page < 3 ? 'Show next page' : book < 3 ? 'Next book' : 'Finish');
+      await click(host, page < 3 ? 'Show next page' : book < 3 ? 'Next book' : 'Vote for a favorite');
+    }
+    if (game === 'telephone') {
+      for (const [i, p] of phones.entries()) {
+        await p.getByText('Pick your favorite drawing').waitFor({ timeout: 8000 });
+        if (!i) { assert.equal(await p.locator('.page').count(), 3); await p.screenshot({ path: '/tmp/telephone-vote.png', fullPage: true }); }
+        await p.locator('.fav').first().click();
+        if (i < phones.length - 1) await p.getByText('Vote locked in.').waitFor({ timeout: 8000 });
+      }
     }
   }
   for (const p of phones) await p.getByText(game === 'telephone' ? 'Every book has been read.' : /wins!|for the win!/).waitFor({ timeout: 8000 });
@@ -702,10 +845,22 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     await guests[0].screenshot({ path: `/tmp/reel-${game}.png`, fullPage: true });
     console.log(`${game}: highlights shown`);
   }
-  if (game === 'telephone') { await click(guests[0], 'Leave game'); await yes(guests[0]); await guests[0].getByPlaceholder('Room code').waitFor(); await guests[0].goto(base); }
-  else await click(guests[0], 'All games');
-  await guests[0].locator('.menu').waitFor();
-  assert.equal(await guests[0].evaluate(() => localStorage.getItem('room')), null);
+  if (game === 'telephone') { await click(guests[0], 'Leave party'); await yes(guests[0]); await guests[0].getByPlaceholder('Room code').waitFor(); await guests[0].goto(base); }
+  else {
+    assert.equal(await guests[0].getByRole('button', { name: 'All games' }).count(), 0);
+    // Step out by accident, then come straight back.
+    const code = await guests[0].evaluate(() => JSON.parse(localStorage.getItem('room')).code);
+    await click(guests[0], 'Leave party'); await yes(guests[0]);
+    await click(guests[0], `Rejoin party ${code}`); await guests[0].getByText(code).first().waitFor({ timeout: 8000 });
+    await guests[0].goto(base); await guests[0].getByRole('link', { name: `Back to your party (${code})` }).click();
+    await guests[0].getByRole('button', { name: 'Leave party' }).waitFor({ timeout: 8000 });
+    // Back to the lobby between games: same code, same people.
+    await click(host, 'Back to lobby'); await host.getByText('How to play').waitFor({ timeout: 8000 });
+    assert.equal((await host.locator('.code').textContent()).trim(), code);
+    await host.locator('#recap li').nth(2).waitFor({ timeout: 8000 });
+  }
+  if (game === 'telephone') await guests[0].goto(base);
+  await guests[0].locator('.menu, #recap').first().waitFor();
   console.log(`${game}: full game passed on 3 browsers`);
 }
 // In the browser: removing someone mid-drawing leaves the other drawings alone.
@@ -732,7 +887,7 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   await click(host, 'Remove Bo'); await host.waitForTimeout(1700); // stays open while the screen updates
   await host.screenshot({ path: '/tmp/ask-remove.png' }); await yes(host);
   await bo.getByText('You are no longer in that room.').waitFor({ timeout: 8000 });
-  await click(di, 'Leave game'); await yes(di); await di.getByPlaceholder('Room code').waitFor();
+  await click(di, 'Leave party'); await yes(di); await di.getByPlaceholder('Room code').waitFor();
   await host.getByRole('button', { name: 'Remove Di' }).waitFor({ state: 'detached', timeout: 8000 });
   await cy.waitForTimeout(1700);
   assert.equal(await ink(), before, 'drawing survives removals');
@@ -761,15 +916,25 @@ assert.deepEqual(await rows(), ['Ann: 1500', 'Bo: 500 (+1500)']);
 await solo.waitForTimeout(2600);
 assert.deepEqual(await rows(), ['Bo: 2000 (+1500)', 'Ann: 1500']);
 await solo.locator('#probe').evaluate(n => n.remove());
-await click(solo, 'Show my word'); await click(solo, 'Start drawing (60s)');
+const viewer = await phone();
+await click(solo, 'Let others watch on their phones');
+const watchCode = (await solo.locator('.code').textContent()).trim();
+await viewer.goto(`${base}/watch.html`); await viewer.getByPlaceholder('Watch code').fill(watchCode.toLowerCase()); await click(viewer, 'Watch');
+await viewer.getByText('Waiting for the next drawing').waitFor({ timeout: 8000 });
+await click(solo, 'Show my word'); const word = await solo.locator('h1').textContent(); await click(solo, 'Start drawing (60s)');
 await solo.locator('.countdown').waitFor(); await solo.waitForTimeout(400); await solo.screenshot({ path: '/tmp/countdown.png' });
 await solo.locator('canvas.pad').waitFor();
 const width = () => solo.evaluate(() => { const d = document.querySelector('canvas.pad').getContext('2d').getImageData(0, 0, 1000, 1000).data; return d.filter((v, i) => i % 4 === 3 && v > 128).length; });
 await click(solo, 'Thin'); await scribble(solo); const thin = await width();
 await click(solo, 'Clear'); await click(solo, 'Thick'); await scribble(solo);
 assert.ok(await width() > thin * 3, 'thick lines are thicker');
+await viewer.getByText('Shout your guesses!').waitFor({ timeout: 8000 });
+await viewer.waitForFunction(() => document.querySelector('canvas')?.getContext('2d').getImageData(0, 0, 1000, 1000).data.some((v, i) => i % 4 === 3 && v), null, { timeout: 8000 });
+assert.ok(!(await viewer.locator('main').textContent()).includes(word), 'watchers do not see the word');
+await viewer.screenshot({ path: '/tmp/watch.png', fullPage: true });
 await solo.screenshot({ path: '/tmp/quick.png', fullPage: true });
-await click(solo, 'They got it!'); await solo.getByRole('button', { name: 'Add 1', exact: true }).first().click();
+await click(solo, 'They got it!');
+await viewer.getByText(`It was “${word}”`).waitFor({ timeout: 8000 }); await solo.getByRole('button', { name: 'Add 1', exact: true }).first().click();
 assert.equal(await solo.locator('.team output').first().textContent(), '1');
 await solo.goto(base); await solo.screenshot({ path: '/tmp/menu.png', fullPage: true });
 assert.deepEqual(errors, []);

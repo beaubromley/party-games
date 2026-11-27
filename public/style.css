@@ -197,3 +197,8 @@ html.large .bubbles p { font-size: 20px; }
 .reel .answer { margin-top: 12px; }
 .reel .answer b { display: block; font-size: 20px; overflow-wrap: anywhere; }
 .reel button { margin-top: 8px; }
+.like { display: block; margin-top: 10px; min-height: 44px; padding: 8px 18px; }
+.like.on { background: var(--ink); color: var(--paper); }
+.liked { font-weight: 600; margin-top: 8px; }
+.party-code { text-align: center; margin-top: 14px; letter-spacing: 2px; }
+#party { background: var(--gold); font-weight: 800; }
