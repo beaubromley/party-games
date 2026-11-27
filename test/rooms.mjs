@@ -322,6 +322,65 @@ const room = (game, n) => {
   assert.equal(best.votes, 2); assert.equal(best.artist, t.players.find(p => p.id === artist).name); assert.ok(best.strokes && best.prompt);
   const m = room('majority', 2); assert.throws(() => rules.vote(m, 'p0', 0));
 }
+// Standings, awards, reactions and no repeats.
+{
+  const h = await handle(query, { action: 'create', game: 'majority', name: 'A' });
+  const j = await Promise.all(['B', 'C'].map(name => handle(query, { action: 'join', code: h.code, name })));
+  const [a, b, c] = [h, ...j].map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
+  const at = async () => (await handle(query, { action: 'poll', ...a })).state;
+  const seen = [];
+  let v = await at();
+  for (let game = 0; game < 6; game++) {
+    await handle(query, { action: 'start', ...a, step: v.step, rounds: 12 });
+    for (let q = 0; q < 12; q++) {
+      v = await at(); seen.push(v.question);
+      await assert.rejects(handle(query, { action: 'react', ...b, kind: 0 }), /results/);
+      for (const [p, text] of [[a, 'dog'], [b, 'dog'], [c, 'cat']]) await handle(query, { action: 'fake', ...p, step: v.step, text });
+      v = await at();
+      await handle(query, { action: 'next', ...a, step: v.step });
+    }
+    v = await at();
+  }
+  const { MAJORITY } = await import('../lib/party-content.js');
+  assert.equal(new Set(seen.slice(0, 72)).size, 72, 'no repeats while new prompts remain');
+  assert.deepEqual(v.night.map(p => [p.name, p.points, p.wins]).sort(), [['A', 18, 6], ['B', 18, 6], ['C', 0, 0]]);
+  assert.deepEqual(v.awards.map(x => [x.title, x.names.sort().join(), x.times]), [['Hive Mind', 'A,B', 12], ['Free Spirit', 'C', 12]]);
+  // Standings count once, survive a game switch, and only the host clears them.
+  await handle(query, { action: 'face', ...c, data: '' });
+  v = (await handle(query, { action: 'switch', ...a, step: v.step, game: 'bluff' })).state;
+  assert.equal(v.night[0].points, 18);
+  await assert.rejects(handle(query, { action: 'forget', ...b, step: v.step }), /Only the host/);
+  assert.deepEqual((await handle(query, { action: 'forget', ...a, step: v.step })).state.night, []);
+  // Bible has enough for several games without a repeat.
+  const asked = [];
+  v = await at();
+  for (let game = 0; game < 7; game++) {
+    v = (await handle(query, { action: 'start', ...a, step: v.step, topic: 'bible', rounds: 8 })).state;
+    for (let q = 0; q < 8; q++) {
+      v = await at(); asked.push(v.question);
+      v = (await handle(query, { action: 'next', ...a, step: v.step })).state;
+      v = (await handle(query, { action: 'next', ...a, step: v.step })).state;
+      v = (await handle(query, { action: 'next', ...a, step: v.step })).state;
+    }
+  }
+  assert.equal(new Set(asked).size, asked.length);
+  // Running a topic dry starts it over instead of failing.
+  for (let game = 0; game < 4; game++) { v = (await handle(query, { action: 'start', ...a, step: v.step, topic: 'bible', rounds: 8 })).state; assert.equal(v.total, 8);
+    v = (await handle(query, { action: 'restart', ...a, step: v.step })).state; }
+  for (let game = 0; game < 4; game++) { v = (await handle(query, { action: 'start', ...a, step: v.step, topic: 'trivia', rounds: 8 })).state; assert.equal(v.total, 8);
+    v = (await handle(query, { action: 'restart', ...a, step: v.step })).state; }
+  const r = room('bluff', 3);
+  rules.start(r, [{ question: 'q', answer: 'truth' }]);
+  ['x', 'y', 'z'].forEach((text, i) => rules.submitFake(r, 'p' + i, text));
+  const pick = text => r.options.findIndex(o => o.text === text);
+  rules.vote(r, 'p0', pick('y')); rules.vote(r, 'p1', pick('truth')); rules.vote(r, 'p2', pick('y'));
+  rules.react(r, 'p0', 3);
+  assert.throws(() => rules.react(r, 'p0', 1), /One at a time/);
+  assert.throws(() => rules.react(r, 'p1', 9), /Unknown/);
+  rules.advance(r); rules.tally(r); rules.tally(r);
+  assert.deepEqual(rules.view(r, 'p0').awards.map(x => [x.title, x.names.join()]), [['Best Bluffer', 'P1'], ['Sharpest Detective', 'P1'], ['Most Gullible', 'P0,P2']]);
+  assert.equal(r.night.p1.points, 3);
+}
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
@@ -507,7 +566,15 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
         assert.equal(fans, 2);
       }
       await guests[0].locator('.page').nth(page - 1).waitFor({ timeout: 8000 });
-      if (book === 1 && page === 3) await host.screenshot({ path: '/tmp/telephone-reveal.png', fullPage: true });
+      if (book === 1 && page === 3) {
+        await host.screenshot({ path: '/tmp/telephone-reveal.png', fullPage: true });
+        const [file] = await Promise.all([host.waitForEvent('download'), click(host, 'Save this book')]);
+        assert.equal(file.suggestedFilename(), 'telephone-book.png');
+        await file.saveAs('/tmp/book.png');
+        await click(guests[0], 'Bravo!');
+        await host.locator('.bubbles p').filter({ hasText: 'Bravo! Bo' }).waitFor({ timeout: 8000 });
+        await host.screenshot({ path: '/tmp/reaction.png' });
+      }
       await click(host, page < 3 ? 'Show next page' : book < 3 ? 'Next book' : 'Finish');
     }
   }
@@ -515,6 +582,14 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   assert.equal(await host.locator('.podium').count(), game === 'telephone' ? 0 : 1);
   await host.getByRole('heading', { name: 'Play again' }).waitFor();
   if (game !== 'telephone') await host.screenshot({ path: `/tmp/${game}-final.png`, fullPage: true });
+  if (game !== 'telephone') await host.getByRole('heading', { name: "Tonight's standings" }).waitFor();
+  if (game === 'faceoff') {
+    await click(host, 'Larger text: off'); await host.waitForTimeout(3500);
+    await host.screenshot({ path: '/tmp/large.png', fullPage: true });
+    const wide = await host.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+    assert.ok(wide <= 0, 'larger text fits the screen');
+    await click(host, 'Larger text: on');
+  }
   if (game === 'telephone') {
     await host.getByRole('heading', { name: 'Fan favorite', exact: true }).waitFor();
     await host.waitForTimeout(900); await host.screenshot({ path: '/tmp/favorite.png', fullPage: true });

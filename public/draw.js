@@ -18,7 +18,7 @@ function ready(message, points = 0) {
   clearTimeout(timer);
   show(homeLink(), el('h1', {}, 'Quick Draw'), message && el('p', { className: 'question' }, message),
     scoreboard(points), el('p', {}, 'Hand the phone to the drawer. No letters or numbers!'),
-    button('Show my word', reveal), el('button', { className: 'sound', onclick: e => { setSound(!soundOn()); e.target.textContent = soundLabel(); } }, soundLabel()));
+    button('Show my word', reveal), el('button', { className: 'sound', onclick: e => { setSound(!soundOn()); e.target.textContent = soundLabel(); } }, soundLabel()), textSizeButton());
 }
 function reveal() {
   if (!pile.length) pile = shuffle(QUICK_WORDS);

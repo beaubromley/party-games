@@ -2,6 +2,7 @@
 import { el, timed } from './ui.js';
 import { picture, sketchpad } from './canvas.js';
 import { DOODLE_PROMPTS } from './words.js';
+import { savePicture } from './save.js';
 
 export const PARTY_GAMES = {
   faceoff: { title: 'Face-Off', blurb: 'Two answers, one winner. Best with 3 or more.',
@@ -89,6 +90,8 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
       e.strokes && !e.skipped && e.byId !== s.you && el('button', { className: 'fav' + (s.picked === i ? ' on' : ''), ariaPressed: s.picked === i,
         onclick: () => send({ action: 'vote', choice: i }) }, s.picked === i ? 'Your favorite' : 'Pick as favorite'))),
       el('p', { className: 'fine' }, 'Choose one favorite drawing across all the books. A new pick replaces the old one.'),
+      !s.more && button('Save this book', () => savePicture([{ text: `${s.owner}'s book`, big: true },
+        ...s.entries.flatMap((e, i) => [{ text: `${e.by} ${e.strokes ? 'drew' : i ? 'saw' : 'wrote'}` }, e.strokes ? { strokes: e.strokes } : { text: e.text, big: true }])], 'telephone-book'), 'alt'),
       onward(s.last ? 'Finish' : s.more ? 'Show next page' : 'Next book'), !host && el('p', {}, 'The host turns the pages.'));
   }
   return nodes;

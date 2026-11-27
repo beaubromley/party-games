@@ -12,6 +12,7 @@
 <link rel="icon" href="/icon.svg?v=3" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
 <link rel="stylesheet" href="/style.css">
+<script src="/textsize.js"></script>
 <title>Party Games</title>
 </head>
 <body>
@@ -28,6 +29,7 @@
   <p id="install" hidden>For full screen with no Safari bar: tap Share, then <b>Add to Home Screen</b>, and open it from the new icon. Joining a friend's game there? Type the room code.</p>
 </main>
 <script>
+document.querySelector('.menu').append(textSizeButton());
 document.getElementById('install').hidden = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 </script>
 <script>navigator.serviceWorker?.register('/sw.js');</script>

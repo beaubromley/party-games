@@ -147,3 +147,27 @@ summary { font-weight: 600; min-height: 44px; display: list-item; padding: 10px 
 .answer .crown::after { background: #fffaf0; }
 .answer canvas { margin-bottom: 8px; }
 .bluffed { margin-top: 12px; }
+.cheers { position: sticky; bottom: env(safe-area-inset-bottom); z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 16px; background: var(--paper); padding: 8px 0; }
+.cheers button { padding: 8px 2px; background: var(--gold); }
+.bubbles { position: fixed; left: 0; right: 0; bottom: 90px; z-index: 20; pointer-events: none; }
+.bubbles p { position: absolute; bottom: 0; white-space: nowrap; background: #fffaf0; border: 2px solid var(--ink); border-radius: 20px; padding: 6px 14px; animation: float 2.6s ease-out both; }
+.bubbles b { font-family: var(--display); font-size: 24px; }
+@keyframes float { 0% { transform: translateY(30px) scale(.5); opacity: 0; } 15% { transform: none; opacity: 1; } 75% { opacity: 1; } 100% { transform: translateY(-160px); opacity: 0; } }
+.night { padding-left: 24px; font-size: 19px; line-height: 1.7; }
+.awards.enter { animation: pop .5s cubic-bezier(.2, 1.6, .4, 1) both; }
+/* Larger text. The drawing canvas and the Forehead card keep their own sizes. */
+html.large p, html.large li, html.large label, html.large summary { font-size: 22px; }
+html.large button, html.large input, html.large a.link { font-size: 22px; }
+html.large .big { font-size: 25px; }
+html.large .question { font-size: 36px; }
+html.large h2 { font-size: 25px; }
+html.large .answer b { font-size: 33px; }
+html.large .fine, html.large footer, html.large footer a { font-size: 17px; }
+html.large #recap, html.large #recap li { font-size: 27px; }
+html.large .who-done span { font-size: 19px; }
+html.large .menu a { font-size: 34px; }
+html.large .menu small { font-size: 19px; }
+html.large #decks button { font-size: 26px; }
+html.large .cheers button { font-size: 18px; }
+html.large .bubbles p { font-size: 20px; }
+@media (prefers-reduced-motion: reduce) { .awards.enter { animation: none !important; } .bubbles p { animation: none; } }

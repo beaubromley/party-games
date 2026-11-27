@@ -100,6 +100,7 @@ function finish() {
 const mute = () => { $('mute').textContent = `Sound: ${soundOn() ? 'on' : 'off'}`; };
 $('mute').onclick = () => { setSound(!soundOn()); mute(); };
 mute();
+$('mute').after(textSizeButton());
 $('got').onclick = () => answer('got');
 $('pass').onclick = () => answer('pass');
 $('quit').onclick = () => { stop(); show('home'); };

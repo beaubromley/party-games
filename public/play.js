@@ -1,6 +1,7 @@
 import { el, homeLink, podium, timed, WINNER_AT } from './ui.js';
 import { play, soundOn, setSound } from './sound.js';
 import { keepAwake } from './wake.js';
+import { savePicture } from './save.js';
 import { picture, sketchpad } from './canvas.js';
 import { shrink, saveFace, savedFace, FACE_DAYS } from './face.js';
 import { BLUFF_TOPICS } from './topics.js';
@@ -17,6 +18,30 @@ let preview = null; // { topic, samples }
 let lastScreen = '';
 let ceremony = { key: '', at: 0 }; // when this final screen first appeared
 let reveal = { key: '', at: 0, gap: 1 }; // the same for a round's results
+const REACTIONS = ['Ha!', 'Wow!', 'Bravo!', 'No way!'];
+let heard = null; // the newest reaction already shown
+const bubbles = el('div', { className: 'bubbles', role: 'status' });
+const cheers = el('div', { className: 'cheers', role: 'group', ariaLabel: 'React' }, REACTIONS.map((text, kind) => el('button', {
+  onclick: async () => { try { apply(await api({ action: 'react', kind, ...me })); } catch (err) { note.textContent = err.message; } } }, text)));
+document.body.append(bubbles);
+function showReactions() {
+  const newest = state.reactions.at(-1)?.n ?? 0;
+  // Joining or rejoining doesn't replay what was already said.
+  if (heard !== null) for (const r of state.reactions.filter(r => r.n > heard)) {
+    const bubble = el('p', {}, el('b', {}, REACTIONS[r.kind]), ` ${r.name}`);
+    bubble.style.left = `${8 + (r.n * 37) % 55}%`;
+    bubbles.append(bubble);
+    setTimeout(() => bubble.remove(), 2600);
+  }
+  heard = newest;
+}
+function nightBoard(host) {
+  if (!state.night.length) return [];
+  return [el('h2', {}, "Tonight's standings"),
+    el('ol', { className: 'night' }, state.night.map(p => el('li', {}, `${p.name}: ${p.points} ${p.points === 1 ? 'point' : 'points'}${p.wins ? `, ${p.wins} ${p.wins === 1 ? 'win' : 'wins'}` : ''}`))),
+    el('p', { className: 'fine' }, '3, 2 and 1 points for each podium finish in this room.'),
+    host && button('Reset standings', () => { if (confirm("Clear tonight's standings?")) send({ action: 'forget' }); }, 'alt')];
+}
 const TIMER_CHOICES = [[0, 'Off'], [30, '30s'], [60, '60s'], [90, '90s'], [120, '2 min']];
 let timerChoice = 0, deadline = 0, ticked = '';
 try { const t = Number(localStorage.getItem('timer')); if (TIMER_CHOICES.some(([n]) => n === t)) timerChoice = t; } catch {}
@@ -167,7 +192,7 @@ async function quit() {
   clearTimeout(timer); me = null;
   try { await api({ action: 'leave', ...mine }); } catch {}
 }
-function leave() { keepAwake(false); deadline = 0; switching = false; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function leave() { heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; switching = false; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -209,7 +234,7 @@ function apply(data) {
   waiting.replaceChildren(...state.progress ? [el('span', {}, `${done} of ${state.progress.length} done`),
     el('span', { className: 'who-done' }, state.progress.map(p => el('span', { className: p.done ? 'done' : '', ariaLabel: `${p.name}: ${p.done ? 'done' : 'still going'}` }, p.name)))] : []);
   // Only rebuild when the screen really changes, so a half-typed answer or drawing survives polling.
-  const key = [state.game, state.step, state.sent, state.item, state.favorite, state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
+  const key = [state.game, state.step, state.sent, state.item, state.favorite, state.night.map(p => p.name + p.points).join(), state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
     FACE_SCREENS.includes(state.phase) && state.players.map(p => [p.id, p.face]).join() + state.host,
     state.requests.map(r => r.id + r.topic).join()].join(':');
   if (key !== shown) {
@@ -219,6 +244,7 @@ function apply(data) {
     shown = key; note.textContent = ''; render();
   }
   updateControls();
+  showReactions();
   loadFaces();
 }
 
@@ -253,6 +279,7 @@ function render() {
     if (host && s.players.length >= 2) nodes.push(...hostSetup(), ...startButtons());
     else nodes.push(el('p', {}, s.players.length < 2 ? 'Need at least 2 players.' : 'Waiting for the host to start.'));
     if (host) nodes.push(gameSwitcher());
+    nodes.push(...nightBoard(host));
   } else if (PARTY_GAMES[game] && s.phase !== 'done') {
     nodes.push(...partyScreen({ s, host, send, button, faceImg, scores, redraw: render, reveal }));
   } else if (s.phase === 'drawing') {
@@ -291,6 +318,7 @@ function render() {
     const ranked = [...s.options].sort((a, b) => a.truth - b.truth);
     const after = node => timed(node, reveal.at, 0.2 + ranked.length * reveal.gap);
     nodes.push(...subject(), s.artist && el('p', {}, `Drawn by ${s.artist}`),
+      s.drawing && button('Save drawing', () => savePicture([{ text: s.options.find(o => o.truth).text, big: true }, { strokes: s.drawing }, { text: `Drawn by ${s.artist}` }], 'doodle'), 'alt'),
       ...ranked.map((o, i) => timed(el('p', { className: 'note card' + (o.truth ? ' truth' : '') },
         ...o.authorIds.map(id => faceImg(id)), el('b', {}, `${o.truth ? 'REAL: ' : 'Fake: '}${o.text}`), el('br'),
         o.truth ? '' : `by ${o.authors.join(' & ')}${o.helped.length ? ` (AI help: ${o.helped.join(', ')})` : ''} · `, o.voters.length ? `picked by ${o.voters.join(', ')}` : 'nobody picked it'), reveal.at, 0.2 + i * reveal.gap)),
@@ -308,7 +336,8 @@ function render() {
         if (ceremony.key !== key) { ceremony = { key, at: Date.now() }; play('fanfare', 0.2, host); }
         nodes.push(el('h2', {}, favorites.length > 1 ? 'Fan favorites (tie)' : 'Fan favorite'), ...favorites.map(f => timed(el('section', { className: 'answer winner card' },
           el('div', { className: 'crown', ariaHidden: 'true' }), picture(f.strokes), el('b', {}, f.prompt),
-          el('p', {}, `Drawn by ${f.artist}. ${f.votes} ${f.votes === 1 ? 'vote' : 'votes'}.`)), ceremony.at, 0.2)));
+          el('p', {}, `Drawn by ${f.artist}. ${f.votes} ${f.votes === 1 ? 'vote' : 'votes'}.`),
+          button('Save picture', () => savePicture([{ text: f.prompt, big: true }, { strokes: f.strokes }, { text: `Drawn by ${f.artist}` }], 'fan-favorite'), 'alt')), ceremony.at, 0.2)));
       }
     } else {
       const winners = s.players.filter(p => p.score === top).map(p => p.name);
@@ -323,6 +352,10 @@ function render() {
         top > 0 && podium(s.players.map(p => ({ name: p.name, score: p.score, face: faceImg(p.id) })), ceremony.at),
         top > 0 ? timed(scores(), ceremony.at, WINNER_AT + 0.8) : scores());
     }
+    if (s.awards?.length) nodes.push(timed(el('section', { className: 'awards' }, el('h2', {}, 'Awards'),
+      s.awards.map(a => el('div', { className: 'answer' }, el('b', {}, a.title), el('p', {}, a.names.join(' & ')),
+        el('p', { className: 'fine' }, `${a.detail[0].toUpperCase()}${a.detail.slice(1)} (${a.times})`)))), ceremony.at, WINNER_AT + 1.2));
+    nodes.push(...nightBoard(host));
     nodes.push(topicPicker(host));
     if (host) nodes.push(...hostSetup(), el('h2', {}, 'Play again'), ...startButtons(), gameSwitcher());
     else nodes.push(el('p', {}, 'Waiting for the host to start another game.'));
@@ -335,7 +368,8 @@ function render() {
       await quit(); leave();
     }, 'alt');
   if (['writing', 'drawing', 'voting'].includes(s.phase)) nodes.unshift(clock);
-  nodes.push(controls, waiting, note, soundButton(), exit,
+  if (['reveal', 'done'].includes(s.phase)) nodes.push(cheers);
+  nodes.push(controls, waiting, note, soundButton(), textSizeButton(), exit,
     game === 'bluff' && el('footer', {}, 'Trivia: ', el('a', { href: 'https://opentdb.com' }, 'Open Trivia Database'), ' (CC BY-SA 4.0), filtered, plus some written for this app.'));
   app.replaceChildren(...nodes.filter(Boolean));
   // Jump to the top for a new screen only, not when browsing topics.
