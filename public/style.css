@@ -204,3 +204,14 @@ html.large .bubbles p { font-size: 20px; }
 .party-code { text-align: center; margin-top: 14px; letter-spacing: 2px; }
 #party { background: var(--gold); font-weight: 800; }
 .note:empty { margin: 0; padding: 0; }
+.verse { white-space: pre-line; }
+.answer b.verse { display: block; font-size: 20px; line-height: 1.5; }
+button.big.verse { text-align: left; line-height: 1.5; font-size: 17px; }
+.starter { font-weight: 700; font-size: 18px; margin-top: 14px; }
+.hear { display: inline-block; }
+.answer select { display: block; width: 100%; margin-top: 10px; min-height: 48px; font: inherit; border: 2px solid var(--ink); border-radius: 4px; background: #fffaf0; color: var(--ink); padding: 8px; }
+.secret { text-align: center; }
+.secret .like { margin: 8px auto 0; }
+.reel .answer b, .reel .answer p { white-space: pre-line; }
+.menu a:nth-of-type(8) { background: var(--green); } .menu a:nth-of-type(9) { background: var(--ink); } .menu a:nth-of-type(10) { background: var(--gold); color: var(--ink); }
+.menu a:nth-of-type(11) { background: var(--red); } .menu a:nth-of-type(12) { background: var(--blue); } .menu a:nth-of-type(13) { background: var(--green); }

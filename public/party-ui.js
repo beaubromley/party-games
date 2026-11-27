@@ -3,6 +3,7 @@ import { el, timed } from './ui.js';
 import { picture, sketchpad } from './canvas.js';
 import { DOODLE_PROMPTS } from './words.js';
 import { savePicture } from './save.js';
+import { MORE_GAMES, moreScreen } from './more-ui.js';
 
 export const PARTY_GAMES = {
   faceoff: { title: 'Face-Off', blurb: 'Two answers, one winner. Best with 3 or more.',
@@ -11,12 +12,26 @@ export const PARTY_GAMES = {
     starts: [5, 8, 12].map(n => [`Start: ${n} questions`, n]) },
   telephone: { title: 'Telephone Doodle', blurb: 'Write, draw, guess, repeat. Best with 4 or more.',
     starts: [['Start passing', 0]] },
+  rap: { title: 'Rhyme Battle', blurb: 'Finish the verse, battle head to head. Best with 3 or more.',
+    starts: [['Start: 1 round', 1], ['Start: 2 rounds', 2]] },
+  ...MORE_GAMES,
 };
+// Reads a verse out in the phone's own voice.
+function perform(text) {
+  if (!window.speechSynthesis) return false;
+  return el('button', { className: 'like hear', onclick: () => {
+    speechSynthesis.cancel();
+    const voice = new SpeechSynthesisUtterance(text.replaceAll('\n', '. '));
+    voice.rate = 1.05; voice.pitch = 0.8;
+    speechSynthesis.speak(voice);
+  } }, 'Hear it');
+}
 
 let draft = { key: '', text: '' }; // typed text survives redraws
 let picked = null; // host's first tap when combining answers
 
-export function partyScreen({ s, host, send, button, faceImg, scores, redraw, reveal, like }) {
+export function partyScreen(context) {
+  const { s, host, send, button, faceImg, scores, redraw, reveal, like } = context;
   // Results flip in one at a time; `order` is each card's place in the queue.
   const card = (node, order) => { node.classList.add('card'); return timed(node, reveal.at, 0.2 + order * reveal.gap); };
   const after = (node, order) => timed(node, reveal.at, 0.2 + order * reveal.gap);
@@ -36,13 +51,25 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
   }, 'alt');
   const onward = label => host && button(label, () => send({ action: 'next' }));
   const nodes = [];
+  if (Object.hasOwn(MORE_GAMES, s.game)) return moreScreen({ ...context, card, after, say, answerForm, edit, onward });
+  const rap = s.game === 'rap';
+  // The two lines to rhyme with, each followed by a box.
+  const verseForm = () => {
+    const key = `${s.you}:${s.step}:${s.item}`;
+    if (draft.key !== key) draft = { key, text: '', lines: ['', ''] };
+    draft.lines ??= ['', ''];
+    const inputs = [0, 1].map(i => el('input', { value: draft.lines[i], oninput: e => { draft.lines[i] = e.target.value; }, maxLength: 60, placeholder: 'Your rhyme', ariaLabel: `Your rhyme ${i + 1}`, autocomplete: 'off', enterKeyHint: i ? 'send' : 'next' }));
+    return el('form', { onsubmit: e => { e.preventDefault(); send({ action: 'fake', text: inputs.map(x => x.value), item: s.item }); } },
+      ...inputs.flatMap((input, i) => [el('p', { className: 'starter' }, s.starters[i]), input]), el('button', { className: 'big' }, 'Send'));
+  };
 
-  if (s.game === 'faceoff') {
-    const round = s.rounds > 1 ? `Round ${s.round} of ${s.rounds}${s.round > 1 ? ' (double points)' : ''}` : 'Face-Off';
+  if (s.game === 'faceoff' || rap) {
+    const round = s.rounds > 1 ? `Round ${s.round} of ${s.rounds}${s.round > 1 ? ' (double points)' : ''}` : PARTY_GAMES[s.game].title;
     if (s.phase === 'writing') {
       nodes.push(el('p', {}, round));
       if (s.sittingOut) nodes.push(say("You're in! Get ready to vote on these."));
       else if (s.sent) nodes.push(say('Both answers are in!'));
+      else if (rap) nodes.push(el('p', {}, `Your verse ${s.number} of 2`), verseForm());
       else nodes.push(el('p', {}, `Your prompt ${s.number} of 2`), say(s.question), ...answerForm('Make them laugh', 60),
         s.canHint && button('AI help (half points)', async e => {
           e.target.disabled = true; e.target.textContent = 'Thinking…';
@@ -50,18 +77,22 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
           if (e.target.isConnected) { e.target.disabled = false; e.target.textContent = 'AI help (half points)'; }
         }, 'alt'),
         s.hint && el('p', { className: 'fine' }, 'Suggested by Claude. Edit it if you like. It earns half points.'));
-      nodes.push(...s.written.map(w => edit(`Edit “${w.text}”`, w.text, w.item)));
+      nodes.push(...s.written.map((w, i) => rap ? button(`Edit sent verse ${i + 1}`, () => {
+        draft = { key: `${s.you}:${s.step}:${w.item}`, text: '', lines: [...w.lines] };
+        return send({ action: 'unsend', item: w.item });
+      }, 'alt') : edit(`Edit “${w.text}”`, w.text, w.item)));
     } else if (s.phase === 'voting') {
       nodes.push(el('p', {}, `${round}. Matchup ${s.matchup} of ${s.matchups}`), say(s.question));
       if (!s.canVote) nodes.push(say('This one is yours. Act natural.'));
       else if (s.sent) nodes.push(say('Vote locked in.'));
-      else nodes.push(...s.options.map((o, i) => Object.assign(button(o.mine ? `${o.text} (yours)` : o.text, () => send({ action: 'vote', choice: i })), { disabled: o.mine })));
+      else nodes.push(...s.options.flatMap((o, i) => [Object.assign(button(o.mine ? `${o.text} (yours)` : o.text, () => send({ action: 'vote', choice: i }), rap ? 'verse' : ''), { disabled: o.mine }), rap && perform(o.text)]));
+      if (rap && (!s.canVote || s.sent)) nodes.push(...s.options.map(o => el('section', { className: 'answer' }, el('b', { className: 'verse' }, o.text), perform(o.text))));
     } else {
       const top = Math.max(...s.options.map(o => o.voters.length));
       // Fewest votes first, so the winner lands last.
       const ranked = [...s.options].sort((a, b) => a.voters.length - b.voters.length);
       nodes.push(say(s.question), ...ranked.map((o, i) => card(el('section', { className: 'answer' + (top && o.voters.length === top ? ' winner' : '') },
-        el('b', {}, o.text), el('p', {}, faceImg(o.authorId), o.author, o.helped ? ' (AI help)' : '', s.gains[o.authorId] ? ` +${s.gains[o.authorId]}` : ''),
+        el('b', { className: rap ? 'verse' : '' }, o.text), rap && perform(o.text), el('p', {}, faceImg(o.authorId), o.author, o.helped ? ' (AI help)' : '', s.gains[o.authorId] ? ` +${s.gains[o.authorId]}` : ''),
         el('p', { className: 'fine' }, s.options.length < 2 ? 'No opponent answered.' : o.voters.length ? `Picked by ${o.voters.join(', ')}` : 'No votes'), like([o.authorId])), i)),
         after(scores(ranked.length), ranked.length), onward(s.last ? 'Final scores' : 'Next'));
     }

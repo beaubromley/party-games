@@ -112,6 +112,12 @@ const HOW_TO = {
   doodle: ['Everyone secretly draws a prompt.', 'Make up titles for each drawing.', 'Find the real title and fool others with yours.'],
   faceoff: ['Answer two silly prompts.', 'Two answers go head to head and everyone else votes.', 'More votes, more points. A second round counts double.'],
   majority: ['Everyone answers the same question.', 'Answer what you think most people will say.', 'The most common answer scores.'],
+  rap: ['Finish two verses by rhyming the lines you are given.', 'Two verses battle and everyone else votes. Tap Hear it to have one read aloud.', 'More votes, more points. A second round counts double.'],
+  oddone: ['Everyone answers the same prompt, except one secret faker.', 'See the answers and the prompt, then talk it over.', 'Vote for the faker. They score if they slip by.'],
+  split: ['Finish a "would you" with a catch.', 'Everyone else votes yes or no.', 'The more evenly they split, the more you score.'],
+  whosaid: ['Everyone finishes the same sentence in secret.', 'Match each answer to a person.', 'Score for right guesses, and for keeping people guessing.'],
+  snack: ['Peek at your secret role. Pie thieves raid at night.', 'By day, talk it out and vote someone to bed.', 'Family wins by catching every thief. Thieves win when they equal the rest.'],
+  survival: ['Answer the question.', 'Miss it and face a danger round.', 'Outlast everyone. Ghosts keep scoring, but survivors win.'],
   telephone: ['Write a phrase, then pass it on.', 'The next player draws it, the one after describes the drawing, and so on.', 'Read every book together, then vote for a favorite drawing.'],
 };
 const soundButton = () => {
@@ -322,7 +328,7 @@ function render() {
   };
   const subject = () => [s.question && el('p', { className: 'question' }, s.question), s.drawing && picture(s.drawing)];
   if (s.phase === 'reveal') {
-    const key = [me.code, game, s.index, s.round, s.matchup, s.bookNumber].join(':');
+    const key = [me.code, game, s.index, s.round, s.matchup, s.bookNumber, s.stage].join(':');
     if (reveal.key !== key) {
       reveal = { key, at: Date.now(), gap: game === 'majority' ? 0.7 : 1 };
       const cards = game === 'telephone' ? 0 : s.options?.length ?? 0;
@@ -346,8 +352,9 @@ function render() {
       fold('how', 'How to play', PARTY_GAMES[game] && el('p', {}, PARTY_GAMES[game].blurb), el('ol', { className: 'how' }, HOW_TO[game].map(line => el('li', {}, line)))),
       ...invite(),
       el('ul', { id: 'recap' }, s.players.map(p => el('li', {}, faceImg(p.id), p.name))), topicPicker(host));
-    if (host && s.players.length >= 2) nodes.push(...startButtons());
-    else nodes.push(el('p', {}, s.players.length < 2 ? 'Need at least 2 players.' : 'Waiting for the host to start.'));
+    const least = PARTY_GAMES[game]?.min ?? 2;
+    if (host && s.players.length >= least) nodes.push(...startButtons());
+    else nodes.push(el('p', {}, s.players.length < least ? `Need at least ${least} players.` : 'Waiting for the host to start.'));
     if (host) nodes.push(gameOptions());
     nodes.push(fold('photo', 'Your photo', facePicker()), ...nightBoard(host), ...highlightReel());
   } else if (PARTY_GAMES[game] && s.phase !== 'done') {
@@ -419,11 +426,12 @@ function render() {
         ceremony = { key, at: Date.now() };
         if (top > 0) { play('drumroll', 0.1, host); play('fanfare', WINNER_AT, host); }
       }
-      const verdict = el('p', { className: 'question verdict' }, top ? `${winners.join(' & ')} ${winners.length > 1 ? 'tie for the win!' : 'wins!'}` : 'Nobody scored. A true tie!');
+      const verdict = el('p', { className: 'question verdict' }, s.headline ? s.headline : top ? `${winners.join(' & ')} ${winners.length > 1 ? 'tie for the win!' : 'wins!'}` : 'Nobody scored. A true tie!');
       nodes.push(el('h1', {}, 'Final scores'),
         top > 0 ? timed(verdict, ceremony.at, WINNER_AT + 0.5) : verdict,
         top > 0 && podium(s.players.map(p => ({ name: p.name, score: p.score, face: faceImg(p.id) })), ceremony.at),
         top > 0 ? timed(scores(), ceremony.at, WINNER_AT + 0.8) : scores());
+      if (s.cast) nodes.push(timed(el('section', { className: 'answer' }, el('h2', {}, 'Who was who'), s.cast.map(line => el('p', {}, line))), ceremony.at, WINNER_AT + 1));
     }
     if (s.awards?.length) nodes.push(timed(el('section', { className: 'awards' }, el('h2', {}, 'Awards'),
       s.awards.map(a => el('div', { className: 'answer' }, el('b', {}, a.title), el('p', {}, a.names.join(' & ')),

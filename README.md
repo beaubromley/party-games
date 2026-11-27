@@ -11,6 +11,12 @@ Family party games for iPhone (ages 10+), on Vercel. No npm dependencies.
 | Face-Off | 2-12 (best 3+) | Turso |
 | Majority Rules | 2-12 (best 3+) | Turso |
 | Telephone Doodle | 2-12 (best 4+) | Turso |
+| Rhyme Battle | 2-12 (best 3+) | Turso |
+| Odd One Out | 3-12 | Turso |
+| Down the Middle | 3-12 | Turso |
+| Who Said It? | 3-12 | Turso |
+| Midnight Snack | 4-12 | Turso |
+| Last One Standing | 2-12 | Turso |
 
 - `lib/rules.js` game rules, `lib/rooms.js` room storage, `api/` Vercel functions.
 - Needs `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.

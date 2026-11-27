@@ -204,13 +204,32 @@ const room = (game, n) => {
     assert.equal(y.state.phase, 'writing');
   }
 }
+// One legal move for any game.
+const move = (r, id, random = () => 0, strokes = [[0, 12, [1, 2, 3, 4]]], text = `word ${id} ${r.step}`) => {
+  const v = rules.view(r, id), any = list => list[Math.floor(random() * list.length)];
+  if (r.game === 'snack') return rules.vote(r, id, any(r.phase === 'voting' ? [...v.targets.map(t => t.id), 'skip']
+    : v.targets.filter(t => !t.mine && r.roles[t.id] !== 'thief').map(t => t.id)));
+  if (r.phase === 'drawing') return rules.submitDrawing(r, id, strokes);
+  if (r.phase === 'writing') return rules.submitFake(r, id, r.game === 'rap' ? [text, 'and ' + text] : text, v.item);
+  if (r.game === 'telephone') return rules.vote(r, id, v.gallery.find(d => d.byId !== id).key);
+  if (r.game === 'oddone') return rules.vote(r, id, any(v.options.filter(o => !o.mine)).id);
+  if (r.game === 'split') return rules.vote(r, id, any(['yes', 'no']));
+  if (r.game === 'whosaid') return rules.vote(r, id, Object.fromEntries(v.answers.filter(a => !a.mine).map(a => [a.n, any(v.suspects).id])));
+  if (r.game === 'survival') return rules.vote(r, id, Math.floor(random() * v.choices.length));
+  rules.vote(r, id, v.options.findIndex(o => !o.mine));
+};
+const content = await import('../lib/more-content.js');
+const deals = {
+  rap: n => ({ sets: 2, prompts: content.RAP.slice(0, 2 * n) }), oddone: () => ({ prompts: content.ODD.slice(0, 3) }),
+  split: () => ({ sets: 2, stems: content.SPLIT.slice(0, 24) }), whosaid: () => ({ prompts: content.WHOSAID.slice(0, 3) }),
+  snack: () => ({}), survival: () => ({ questions: content.SURVIVAL.slice(0, 8) }),
+};
 // Removing players: every game, every phase, either carries on to a finish or returns to the lobby.
 {
-  const games = ['bluff', 'doodle', 'faceoff', 'majority', 'telephone'];
-  const strokes = [[0, 12, [1, 2, 3, 4]]];
+  const games = [...rules.GAMES];
   const begin = (game, n, about) => {
     const r = room(game, n);
-    rules.start(r, game === 'bluff' ? Array.from({ length: 4 }, (_, i) => about ? { question: 'q' + i, subject: 'p' + (i % n) } : { question: 'q' + i, answer: 'truth ' + i })
+    rules.start(r, deals[game] ? deals[game](n) : game === 'bluff' ? Array.from({ length: 4 }, (_, i) => about ? { question: 'q' + i, subject: 'p' + (i % n) } : { question: 'q' + i, answer: 'truth ' + i })
       : game === 'doodle' ? r.players.map(p => 'prompt ' + p.id)
       : game === 'faceoff' ? { sets: 2, prompts: Array.from({ length: 2 * n }, (_, i) => 'f' + i) }
       : game === 'majority' ? { prompts: ['a', 'b', 'c'] } : {});
@@ -220,27 +239,23 @@ const room = (game, n) => {
   const act = (r, random) => {
     const waiting = rules.waitingOn(r);
     if (!waiting.length || random() < 0.05) return rules.advance(r, random);
-    const id = waiting[Math.floor(random() * waiting.length)];
-    const v = rules.view(r, id);
-    if (r.phase === 'drawing') rules.submitDrawing(r, id, strokes);
-    else if (r.phase === 'writing') rules.submitFake(r, id, `word ${id} ${r.step}`, v.item);
-    else if (r.game === 'telephone') rules.vote(r, id, v.gallery.find(d => d.byId !== id).key);
-    else rules.vote(r, id, v.options.findIndex(o => !o.mine));
+    move(r, waiting[Math.floor(random() * waiting.length)], random);
   };
   let seed = 7;
   const random = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
   let carried = 0, restarted = 0;
-  for (let run = 0; run < 6000; run++) {
-    const game = games[run % games.length], n = 2 + (run % 5);
+  for (let run = 0; run < 13200; run++) {
+    const game = games[run % games.length], least = game === 'snack' ? 4 : ['oddone', 'split', 'whosaid'].includes(game) ? 3 : 2;
+    const n = least + (Math.floor(run / games.length) % 6);
     const r = begin(game, n, game === 'bluff' && run % 2 === 0);
     const log = `${game} ${n} players, run ${run}`;
     for (let guard = 0; !['done', 'lobby'].includes(r.phase); guard++) {
-      assert.ok(guard < 500, 'stuck: ' + log);
+      assert.ok(guard < 1500, 'stuck: ' + log);
       if (r.players.length > 1 && random() < 0.08) {
         const target = r.players[Math.floor(random() * r.players.length)].id;
         rules.remove(r, target);
-        if (r.phase === 'lobby') { restarted++; assert.ok(r.players.length < 2 && r.notice, log); } else carried++;
-      } else if (r.players.length < 7 && random() < 0.05) {
+        if (r.phase === 'lobby') { restarted++; assert.ok(r.players.length < (['oddone', 'split', 'whosaid', 'snack'].includes(game) ? 3 : 2) && r.notice, log); } else carried++;
+      } else if (r.players.length < 10 && random() < 0.05) {
         // Someone new, or someone coming back.
         const gone = Object.keys(r.left ?? {});
         rules.join(r, { id: 'n' + r.step + '-' + guard, secret: 's', name: gone.length && random() < 0.6 ? gone[0] : `N${run}-${guard}` }, { prompt: 'late', prompts: ['l' + guard, 'm' + guard] });
@@ -455,39 +470,33 @@ const room = (game, n) => {
 // Joining late, in every game, and finishing normally.
 {
   const line = [[0, 12, [1, 1, 9, 9]]];
+  const step = (r, g) => {
+    const id = rules.waitingOn(r)[0];
+    if (!id) rules.advance(r);
+    else move(r, id, Math.random, line, `w${id}${g}`);
+  };
   const finish = r => {
     for (let g = 0; r.phase !== 'done'; g++) {
-      assert.ok(g < 300, `${r.game} stuck in ${r.phase}`);
-      const id = rules.waitingOn(r)[0];
-      if (!id) rules.advance(r);
-      else if (r.phase === 'drawing') rules.submitDrawing(r, id, line);
-      else if (r.phase === 'writing') rules.submitFake(r, id, `w${id}${g}`, rules.view(r, id).item);
-      else if (r.game === 'telephone') rules.vote(r, id, rules.view(r, id).gallery.find(d => d.byId !== id).key);
-      else rules.vote(r, id, rules.view(r, id).options.findIndex(o => !o.mine));
+      assert.ok(g < 600, `${r.game} stuck in ${r.phase}`);
+      step(r, g);
     }
   };
   const deal = { bluff: [{ question: 'q1', answer: 'a' }, { question: 'q2', answer: 'b' }], doodle: ['x', 'y', 'z'], faceoff: { sets: 2, prompts: 'abcdef'.split('') }, majority: { prompts: ['q', 'r'] }, telephone: {} };
   for (const game of rules.GAMES) {
     // Join at every possible moment of a game.
+    const n = game === 'snack' ? 5 : 3;
     for (let when = 0; ; when++) {
-      assert.ok(when < 300);
-      const r = room(game, 3);
-      rules.start(r, structuredClone(deal[game]));
-      for (let g = 0; g < when && r.phase !== 'done'; g++) {
-        const id = rules.waitingOn(r)[0];
-        if (!id) rules.advance(r);
-        else if (r.phase === 'drawing') rules.submitDrawing(r, id, line);
-        else if (r.phase === 'writing') rules.submitFake(r, id, `w${id}${g}`, rules.view(r, id).item);
-        else if (r.game === 'telephone') rules.vote(r, id, rules.view(r, id).gallery.find(d => d.byId !== id).key);
-        else rules.vote(r, id, rules.view(r, id).options.findIndex(o => !o.mine));
-      }
+      assert.ok(when < 600);
+      const r = room(game, n);
+      rules.start(r, structuredClone(deals[game]?.(n) ?? deal[game]));
+      for (let g = 0; g < when && r.phase !== 'done'; g++) step(r, g);
       const over = r.phase === 'done';
-      rules.join(r, { id: 'late', secret: 's', name: 'Late' }, { prompt: 'p', prompts: ['g', 'h'] });
+      rules.join(r, { id: 'late', secret: 's', name: 'Late' }, { prompt: 'p', prompts: ['g|h', 'i|j'] });
       const v = rules.view(r, 'late');
       if (r.phase === 'drawing' && game === 'doodle') assert.equal(v.prompt, 'p');
       if (game === 'telephone' && ['writing', 'drawing'].includes(r.phase)) { assert.ok(v.sittingOut); assert.ok(!v.progress.some(p => p.name === 'Late')); }
       finish(r);
-      assert.ok(rules.view(r, 'late').players.length === 4);
+      assert.ok(rules.view(r, 'late').players.length === n + 1);
       if (over) break;
     }
   }
@@ -501,6 +510,125 @@ const room = (game, n) => {
   assert.equal(rules.view(r, 'p2').sittingOut, false);
   rules.remove(r, 'p2'); rules.restart(r);
   assert.equal(rules.join(r, { id: 'new2', secret: 'n', name: 'P2' }).score, 0);
+}
+// The new games: scoring, secrets and endings.
+{
+  const go = (r, id, text) => rules.submitFake(r, id, text);
+  const o = room('oddone', 4);
+  assert.throws(() => rules.start(room('oddone', 2), deals.oddone()), /at least 3/);
+  rules.start(o, deals.oddone());
+  const faker = o.faker, others = o.players.map(p => p.id).filter(id => id !== faker);
+  assert.equal(rules.view(o, faker).question, "You're the faker!");
+  assert.ok(!JSON.stringify(rules.view(o, faker)).includes(o.prompts[0].split('|')[0]), 'faker never sees the prompt');
+  assert.equal(rules.view(o, others[0]).clue, undefined);
+  for (const p of o.players) go(o, p.id, 'answer ' + p.id);
+  assert.ok(!('fakerId' in rules.view(o, others[0])));
+  assert.throws(() => rules.vote(o, faker, faker), /another/);
+  for (const id of others) rules.vote(o, id, faker);
+  rules.vote(o, faker, others[0]);
+  assert.equal(o.caught, true);
+  assert.deepEqual(o.players.map(p => p.score), o.players.map(p => p.id === faker ? 0 : 500));
+  rules.like(o, others[0], others[1]);
+  rules.advance(o);
+  rules.remove(o, o.faker);
+  assert.equal(o.index, 2, 'a missing faker skips the round');
+
+  const s = room('split', 5);
+  rules.start(s, deals.split());
+  for (const p of s.players) go(s, p.id, 'it rains');
+  const author = s.scenarios[0].author, voters = s.players.map(p => p.id).filter(id => id !== author);
+  assert.throws(() => rules.vote(s, author, 'yes'), /yours/);
+  voters.forEach((id, i) => rules.vote(s, id, i < 2 ? 'yes' : 'no'));
+  assert.equal(s.players.find(p => p.id === author).score, 1250, 'even split');
+  rules.advance(s);
+  for (const id of s.players.map(p => p.id).filter(id => id !== s.scenarios[1].author)) rules.vote(s, id, 'yes');
+  assert.equal(s.players.find(p => p.id === s.scenarios[1].author).score, s.scenarios[1].author === author ? 1250 : 0);
+
+  const w = room('whosaid', 3);
+  rules.start(w, deals.whosaid());
+  for (const p of w.players) go(w, p.id, 'said by ' + p.id);
+  assert.ok(rules.view(w, 'p0').answers.every(a => !('author' in a) && !('authorId' in a)), 'authors hidden');
+  assert.throws(() => rules.vote(w, 'p0', {}), /every/);
+  const truth = id => Object.fromEntries(w.list.filter(a => a.author !== id).map(a => [a.n, a.author]));
+  rules.vote(w, 'p0', truth('p0')); rules.vote(w, 'p1', truth('p1'));
+  const wrong = Object.fromEntries(w.list.filter(a => a.author !== 'p2').map(a => [a.n, a.author === 'p0' ? 'p1' : 'p0']));
+  rules.vote(w, 'p2', wrong);
+  assert.deepEqual(w.players.map(p => p.score), [1200, 1200, 0]);
+
+  assert.throws(() => rules.start(room('snack', 3), {}), /at least 4/);
+  for (const n of [4, 5, 7, 10, 12]) {
+    const m = room('snack', n);
+    rules.start(m, {});
+    const by = role => Object.keys(m.roles).filter(id => m.roles[id] === role);
+    assert.equal(by('thief').length, n >= 10 ? 3 : n >= 7 ? 2 : 1);
+    assert.equal(by('dog').length, 1); assert.equal(by('grandma').length, n >= 5 ? 1 : 0);
+    for (const id of by('family')) {
+      const v = rules.view(m, id);
+      assert.ok(!v.partners && !v.peeks && v.roleId === 'family' && v.targets.length === n);
+    }
+    // The family finds every thief.
+    for (let g = 0; m.phase !== 'done'; g++) {
+      assert.ok(g < 60);
+      if (m.phase === 'reveal') { rules.advance(m); continue; }
+      const thief = by('thief').find(id => m.alive.includes(id));
+      for (const id of rules.waitingOn(m)) {
+        if (m.phase === 'writing') move(m, id);
+        else if (m.phase === 'voting') rules.vote(m, id, id === thief ? 'skip' : thief);
+      }
+    }
+    const done = rules.view(m, 'p0');
+    assert.match(done.headline, /wins/); assert.equal(done.cast.length, n);
+  }
+  // Night picks that make no sense are refused.
+  const n6 = room('snack', 7);
+  rules.start(n6, {});
+  const [t1, t2] = Object.keys(n6.roles).filter(id => n6.roles[id] === 'thief');
+  assert.throws(() => rules.vote(n6, t1, t2), /not a thief/);
+  const dog = Object.keys(n6.roles).find(id => n6.roles[id] === 'dog');
+  assert.throws(() => rules.vote(n6, dog, dog), /someone else/);
+  // Grandma's guard saves the target.
+  const g = room('snack', 6);
+  rules.start(g, {});
+  const role = r => Object.keys(g.roles).find(id => g.roles[id] === r);
+  const target = role('family');
+  for (const id of rules.waitingOn(g)) rules.vote(g, id, ['thief', 'grandma'].includes(g.roles[id]) ? target : rules.view(g, id).targets.find(t => !t.mine && g.roles[t.id] !== 'thief').id);
+  assert.equal(g.news.saved, true); assert.equal(g.alive.length, 6);
+  assert.equal(rules.view(g, role('dog')).peeks.length, 1);
+
+  const v = room('survival', 3);
+  rules.start(v, deals.survival());
+  rules.vote(v, 'p0', v.quiz.right); rules.vote(v, 'p1', (v.quiz.right + 1) % 4); rules.vote(v, 'p2', v.quiz.right);
+  assert.deepEqual(v.danger, ['p1']);
+  rules.advance(v, () => 0);
+  assert.equal(v.stage, 'danger');
+  assert.throws(() => rules.vote(v, 'p0', 0), /safe/);
+  rules.vote(v, 'p1', v.quiz.right);
+  assert.deepEqual(v.alive, ['p0', 'p2']);
+  rules.advance(v);
+  for (const id of ['p0', 'p1', 'p2']) rules.vote(v, id, id === 'p2' ? (v.quiz.right + 1) % 4 : v.quiz.right);
+  assert.equal(v.players[1].score, 500, 'ghosts still score');
+  rules.advance(v, () => 0); rules.vote(v, 'p2', v.quiz.right ?? 0);
+  rules.advance(v);
+  assert.equal(v.phase, 'done');
+  assert.ok(v.players[0].score > 10000 && rules.view(v, 'p0').headline.includes('P0'));
+
+  const rr = room('rap', 3);
+  rules.start(rr, deals.rap(3));
+  assert.equal(rules.view(rr, 'p0').starters.length, 2);
+  assert.throws(() => rules.submitFake(rr, 'p0', ['only one', ''], rules.view(rr, 'p0').item), /both/);
+  assert.throws(() => rules.reserveHint(rr, 'p0'), /only for/);
+  for (let g = 0; rr.phase === 'writing'; g++) { const id = rules.waitingOn(rr)[0]; move(rr, id, Math.random, undefined, 'line ' + g); }
+  assert.equal(rr.options[0].text.split('\n').length, 4);
+  assert.equal(rules.waitingOn(rr).length, 1);
+  // Through the server, every new game deals and starts.
+  for (const game of ['rap', ...Object.keys(deals).filter(k => k !== 'rap')]) {
+    const h = await handle(query, { action: 'create', game, name: 'A' });
+    for (const name of ['B', 'C', 'D']) await handle(query, { action: 'join', code: h.code, name });
+    const started = await handle(query, { action: 'start', code: h.code, playerId: h.playerId, secret: h.secret, step: 0, rounds: 0 });
+    assert.ok(['writing', 'voting'].includes(started.state.phase), game);
+    assert.ok(started.state.question);
+    await handle(query, { action: 'join', code: h.code, name: 'E' });
+  }
 }
 // Likes: toggled on results, not your own, no points, and counted for an award.
 {
@@ -851,7 +979,7 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     // Step out by accident, then come straight back.
     const code = await guests[0].evaluate(() => JSON.parse(localStorage.getItem('room')).code);
     await click(guests[0], 'Leave party'); await yes(guests[0]);
-    await click(guests[0], `Rejoin party ${code}`); await guests[0].getByText(code).first().waitFor({ timeout: 8000 });
+    await click(guests[0], `Rejoin party ${code}`); await guests[0].getByRole('button', { name: 'Leave party' }).waitFor({ timeout: 8000 });
     await guests[0].goto(base); await guests[0].getByRole('link', { name: `Back to your party (${code})` }).click();
     await guests[0].getByRole('button', { name: 'Leave party' }).waitFor({ timeout: 8000 });
     // Back to the lobby between games: same code, same people.
@@ -901,6 +1029,85 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   await cy.getByText(/Back to the lobby/).waitFor({ timeout: 8000 });
   await cy.screenshot({ path: '/tmp/restarted.png', fullPage: true });
   console.log('removing players: passed');
+}
+// The newer games, start to finish on four phones.
+for (const game of ['rap', 'oddone', 'split', 'whosaid', 'snack', 'survival']) {
+  const phones = [await phone(), await phone(), await phone(), await phone()];
+  const [host, ...guests] = phones;
+  await host.goto(`${base}/play.html?game=${game}`);
+  await host.getByPlaceholder('Your name').fill('Ann'); await click(host, 'Create a room');
+  const code = (await host.locator('.code').textContent()).trim();
+  for (const [i, g] of guests.entries()) {
+    await g.goto(`${base}/play.html?game=${game}&code=${code}`);
+    await g.getByPlaceholder('Your name').fill(['Bo', 'Cy', 'Di'][i]); await click(g, 'Join room');
+  }
+  await host.locator('#recap li').nth(3).waitFor({ timeout: 8000 });
+  await host.screenshot({ path: `/tmp/new-${game}-0lobby.png`, fullPage: true });
+  await click(host, { rap: 'Start: 1 round', oddone: 'Start: 3 rounds', split: 'Start: 1 round', whosaid: 'Start: 3 questions', snack: 'Start the first night', survival: 'Start: 8 questions' }[game]);
+  const stored = () => JSON.parse(sqlite.prepare('SELECT * FROM rooms WHERE code = ?').get(code).state);
+  const shots = new Set();
+  const shot = async (p, label) => { if (!shots.has(label)) { shots.add(label); await p.waitForTimeout(label.startsWith('reveal') || label === 'final' ? 5500 : 300); await p.screenshot({ path: `/tmp/new-${game}-${label}.png`, fullPage: true }); } };
+  const ids = [];
+  for (const p of phones) ids.push(await p.evaluate(() => JSON.parse(localStorage.getItem('room')).playerId));
+  let last = '';
+  for (let turn = 0; ; turn++) {
+    assert.ok(turn < 300, `${game} stuck at ${last}`);
+    const r = stored();
+    if (r.phase === 'done') break;
+    last = `${r.phase} ${r.step}`;
+    const waiting = rules.waitingOn(r);
+    if (!waiting.length) {
+      const next = host.getByRole('button', { name: /^(Next|Next round|Next question|Final scores|Open the vote|Night falls|See who won|Start the danger round)$/ });
+      await next.waitFor({ timeout: 8000 });
+      await shot(host, `reveal${r.stage ?? r.news?.stage ?? ''}`);
+      await next.click();
+    } else {
+      const i = ids.indexOf(waiting[0]), p = phones[i], v = rules.view(r, ids[i]);
+      // Wait for this phone to catch up to the current screen.
+      if (r.phase === 'writing' && game === 'rap') {
+        await p.getByText(v.starters[0], { exact: true }).waitFor({ timeout: 8000 });
+        const boxes = p.getByPlaceholder('Your rhyme');
+        await boxes.nth(0).fill(`my rhyme number ${turn}`); await boxes.nth(1).fill('and that is how we do');
+        await p.waitForTimeout(1700); assert.equal(await boxes.nth(1).inputValue(), 'and that is how we do');
+        await shot(p, 'write'); await click(p, 'Send');
+        if (!shots.has('edit')) { shots.add('edit'); await click(p, 'Edit sent verse 1'); await p.waitForFunction(want => document.querySelector('input')?.value === want, `my rhyme number ${turn}`, { timeout: 8000 }); await click(p, 'Send'); }
+      } else if (r.phase === 'writing' && game !== 'snack') {
+        const box = p.locator('input');
+        await p.getByText(v.question, { exact: false }).first().waitFor({ timeout: 8000 }); await box.waitFor({ timeout: 8000 });
+        await box.fill(`reply ${turn}`); await p.waitForTimeout(1700); assert.equal(await box.inputValue(), `reply ${turn}`);
+        await shot(p, v.faking ? 'faker' : 'write'); await click(p, 'Send');
+        if (!shots.has('edit') && stored().phase === 'writing') { shots.add('edit'); await click(p, 'Edit my answer'); await box.waitFor(); assert.equal(await box.inputValue(), `reply ${turn}`); await click(p, 'Send'); }
+      } else if (game === 'snack') {
+        await p.getByText(v.question, { exact: true }).waitFor({ timeout: 8000 });
+        assert.ok(!(await p.locator('main').textContent()).includes('You are:'), 'role starts covered');
+        if (!shots.has('peek')) { await click(p, 'Peek at my role'); await p.getByText(`You are: ${v.role}`).waitFor(); await shot(p, 'peek'); await click(p, 'Hide my role'); }
+        await shot(p, r.phase === 'writing' ? 'night' : 'day');
+        const thief = Object.keys(r.roles).find(id => r.roles[id] === 'thief');
+        const want = r.phase === 'voting' && ids[i] !== thief ? thief : v.targets.find(t => !t.mine && t.id !== thief)?.id ?? v.targets[0].id;
+        const t = v.targets.find(t => t.id === want);
+        await click(p, t.mine ? `${t.name} (you)` : t.name);
+      } else if (game === 'whosaid') {
+        await p.locator('select').first().waitFor({ timeout: 8000 });
+        const selects = p.locator('select');
+        for (let k = 0; k < await selects.count(); k++) await selects.nth(k).selectOption({ index: 1 + k });
+        await p.waitForTimeout(1700); assert.notEqual(await selects.first().inputValue(), '', 'picks survive a poll');
+        await shot(p, 'vote'); await click(p, 'Lock in my guesses');
+      } else {
+        const text = game === 'split' ? 'Yes' : game === 'survival' ? v.choices[i === 0 ? r.quiz.right ?? 0 : 0] : null;
+        const target = game === 'oddone' ? p.locator('button.big:enabled').filter({ hasText: 'reply' }).first()
+          : game === 'rap' ? p.locator('button.verse:enabled').first() : p.getByRole('button', { name: text, exact: true });
+        await p.getByText(v.question, { exact: false }).first().waitFor({ timeout: 8000 });
+        await target.waitFor({ timeout: 8000 }); await shot(p, v.stage === 'danger' ? 'danger' : 'vote'); await target.click();
+      }
+    }
+    // Let the move reach the room.
+    for (let k = 0; k < 80; k++) { const now = stored(); if (now.step !== r.step || JSON.stringify(now) !== JSON.stringify(r)) break; await host.waitForTimeout(50); }
+  }
+  for (const p of phones) await p.getByRole('heading', { name: 'Final scores' }).waitFor({ timeout: 8000 });
+  await shot(host, 'final');
+  assert.ok(!(await host.locator('main').textContent()).includes('undefined'));
+  for (const p of phones) await p.context().close();
+  console.log(`${game}: full game passed on 4 browsers`);
 }
 const solo = await phone();
 await solo.goto(`${base}/draw.html`);
