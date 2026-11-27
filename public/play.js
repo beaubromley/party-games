@@ -1,4 +1,4 @@
-import { el, homeLink, podium } from './ui.js';
+import { el, homeLink, podium, timed, WINNER_AT } from './ui.js';
 import { picture, sketchpad } from './canvas.js';
 import { shrink, saveFace, savedFace, FACE_DAYS } from './face.js';
 import { BLUFF_TOPICS } from './topics.js';
@@ -13,6 +13,7 @@ const write = v => { try { v ? localStorage.setItem('room', JSON.stringify(v)) :
 let topic = 'trivia';
 let preview = null; // { topic, samples }
 let lastScreen = '';
+let ceremony = { key: '', at: 0 }; // when this final screen first appeared
 let me = read(), version = 0, shown = '', state, timer, busy = false;
 const note = el('p', { className: 'note error', role: 'status' });
 const waiting = el('p', { className: 'note' });
@@ -234,9 +235,13 @@ function render() {
     if (game === 'telephone') nodes.push(el('h1', {}, 'The end'), el('p', { className: 'question' }, 'Every book has been read.'));
     else {
       const winners = s.players.filter(p => p.score === top).map(p => p.name);
+      const key = `${me.code}:${s.step}`;
+      if (ceremony.key !== key) ceremony = { key, at: Date.now() };
+      const verdict = el('p', { className: 'question verdict' }, top ? `${winners.join(' & ')} ${winners.length > 1 ? 'tie for the win!' : 'wins!'}` : 'Nobody scored. A true tie!');
       nodes.push(el('h1', {}, 'Final scores'),
-        el('p', { className: 'question' }, top ? `${winners.join(' & ')} ${winners.length > 1 ? 'tie for the win!' : 'wins!'}` : 'Nobody scored. A true tie!'),
-        top > 0 && podium(s.players.map(p => ({ name: p.name, score: p.score, face: faceImg(p.id) }))), scores());
+        top > 0 ? timed(verdict, ceremony.at, WINNER_AT + 0.5) : verdict,
+        top > 0 && podium(s.players.map(p => ({ name: p.name, score: p.score, face: faceImg(p.id) })), ceremony.at),
+        top > 0 ? timed(scores(), ceremony.at, WINNER_AT + 0.8) : scores());
     }
     nodes.push(topicPicker(host));
     if (host) nodes.push(el('h2', {}, 'Play again'), ...startButtons());

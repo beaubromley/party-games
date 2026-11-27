@@ -80,15 +80,44 @@ h2 { margin-bottom: 4px; }
 .answer button.on { background: var(--ink); color: var(--paper); }
 .page { border-top: 2px solid var(--ink); padding-top: 10px; margin-top: 14px; }
 .page .question { overflow-wrap: anywhere; }
-.podium { display: flex; align-items: flex-end; justify-content: center; gap: 8px; margin: 18px 0; text-align: center; }
-.place { flex: 1; min-width: 0; max-width: 150px; }
-.who { margin-bottom: 8px; overflow-wrap: anywhere; line-height: 1.2; }
+.podium { display: flex; align-items: flex-end; justify-content: center; gap: 8px; margin: 18px 0; text-align: center; position: relative; isolation: isolate; border-bottom: 6px solid var(--ink); padding-top: 12px; }
+.place { flex: 1; min-width: 0; max-width: 150px; position: relative; }
+.winners { margin-bottom: 8px; }
+.who { margin-top: 4px; overflow-wrap: anywhere; line-height: 1.2; }
 .who .face { display: block; margin: 0 auto 4px; width: 56px; height: 56px; }
-.block { display: flex; flex-direction: column; justify-content: center; border: 2px solid var(--ink); border-radius: 4px 4px 0 0; font-weight: 600; }
-.block strong { font-family: var(--display); font-size: 30px; }
-.place1 .block { height: 140px; background: var(--gold); }
-.place2 .block { height: 105px; background: #cfd3d6; }
+.place1 .who { font-size: 17px; }
+.place1 .who .face { width: 80px; height: 80px; border-color: var(--gold); border-width: 4px; }
+.block { display: flex; flex-direction: column; justify-content: center; border: 2px solid var(--ink); border-bottom: 0; border-radius: 6px 6px 0 0; font-weight: 600; position: relative; overflow: hidden; box-shadow: inset 0 8px #ffffff59; }
+.block strong { font-family: var(--display); font-size: 34px; }
+.place1 .block { height: 150px; background: var(--gold); }
+.place2 .block { height: 108px; background: #cfd3d6; }
 .place3 .block { height: 80px; background: #d19a6a; }
+/* A light sweeps across the winning step. */
+.place1 .block::after { content: ''; position: absolute; top: 0; bottom: 0; width: 40px; left: -60px; background: #ffffff80; transform: skewX(-20deg); animation: shine 3.2s 2.8s ease-in-out infinite; }
+/* Slow sunburst behind the winner, like the app icon. */
+.place1::before { content: ''; position: absolute; z-index: -1; left: 50%; top: 80px; width: 280px; height: 280px; margin: -140px; border-radius: 50%;
+  background: repeating-conic-gradient(#e0a52659 0 10deg, transparent 10deg 30deg);
+  -webkit-mask: radial-gradient(closest-side, #000 35%, transparent); mask: radial-gradient(closest-side, #000 35%, transparent);
+  animation: appear .8s 2.2s both, turn 24s linear infinite; }
+.crown { width: 54px; height: 34px; margin: 0 auto 2px; background: var(--ink); position: relative; }
+.crown, .crown::after { clip-path: polygon(0 100%, 0 12%, 25% 50%, 50% 0, 75% 50%, 100% 12%, 100% 100%); }
+.crown::after { content: ''; position: absolute; inset: 3px; background: var(--gold); }
+.confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 10; }
+.confetti i { position: absolute; top: -20px; width: 9px; height: 15px; animation: fall linear both; }
+.block.enter { transform-origin: bottom; animation: rise .6s cubic-bezier(.2, 1.5, .4, 1) both; }
+.winners.enter { animation: pop .55s cubic-bezier(.2, 1.7, .4, 1) both; }
+.verdict.enter { animation: pop .5s cubic-bezier(.2, 1.6, .4, 1) both; }
+#recap.enter { animation: appear .6s both; }
+@keyframes rise { from { transform: scaleY(0); opacity: 0; } 1% { opacity: 1; } to { transform: scaleY(1); } }
+@keyframes pop { from { transform: translateY(-24px) scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes appear { from { opacity: 0; } }
+@keyframes shine { 0% { left: -60px; } 35%, 100% { left: 180px; } }
+@keyframes turn { to { transform: rotate(360deg); } }
+@keyframes fall { from { transform: translate(0, 0) rotate(0); } to { transform: translate(var(--drift), 110vh) rotate(var(--spin)); } }
+@media (prefers-reduced-motion: reduce) {
+  .podium *, .podium *::before, .podium *::after, .verdict.enter, #recap.enter { animation: none !important; }
+  .confetti, .place1 .block::after { display: none; }
+}
 .verdict { grid-column: 1 / -1; text-align: center; }
 .teams .podium, .teams .wide { grid-column: 1 / -1; }
 .teams a.wide { text-align: center; padding: 12px; font-weight: 600; }
