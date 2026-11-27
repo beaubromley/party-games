@@ -4,7 +4,7 @@ export function el(tag, props = {}, ...children) {
   node.append(...children.flat().filter(c => c != null && c !== false));
   return node;
 }
-export const homeLink = () => el('a', { className: 'home', href: '/' }, 'All games');
+export const homeLink = (label = 'All Games', href = '/') => el('a', { className: 'home', href }, `← ${label}`);
 
 // Plays an element's entrance as if it began at `started`, so redrawing a screen doesn't replay it.
 export function timed(node, started, delay) {

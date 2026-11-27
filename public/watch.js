@@ -13,16 +13,17 @@ setInterval(() => {
   if (ends) clock.textContent = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
 }, 250);
 
+const back = () => homeLink('Quick Draw', '/draw.html');
 function form(message = '') {
   run++; clearTimeout(timer); ends = 0; note.textContent = message;
   const input = el('input', { maxLength: 4, placeholder: 'Watch code', autocomplete: 'off', autocapitalize: 'characters', value: code });
-  app.replaceChildren(homeLink(), el('h1', {}, 'Watch Quick Draw'),
+  app.replaceChildren(back(), el('h1', {}, 'Watch a Drawing'),
     el('form', { onsubmit: e => { e.preventDefault(); watch(input.value); } }, input, el('button', { className: 'big' }, 'Watch')), note);
 }
 function show(data) {
   ends = data.seconds === undefined ? 0 : Date.now() + data.seconds * 1000;
   const words = { waiting: 'Waiting for the next drawing…', drawing: 'Shout your guesses!', done: `It was “${data.word}”` };
-  app.replaceChildren(homeLink(), el('p', { className: 'question' }, words[data.status]), clock,
+  app.replaceChildren(back(), el('p', { className: 'question' }, words[data.status]), clock,
     data.status === 'waiting' ? '' : picture(data.strokes), note, el('p', { className: 'fine' }, `Watching ${code}`));
 }
 function watch(value) {

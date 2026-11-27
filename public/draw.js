@@ -11,7 +11,7 @@ keepAwake();
 
 const app = document.getElementById('app');
 let pile = [], timer;
-const show = (...nodes) => { app.replaceChildren(...nodes); scrollTo(0, 0); enterScreen(app); };
+const show = (...nodes) => { app.replaceChildren(...nodes.filter(Boolean)); scrollTo(0, 0); enterScreen(app); };
 const soundLabel = () => `Sound: ${soundOn() ? 'on' : 'off'}`;
 const button = (label, onclick, extra = '') => el('button', { className: 'big ' + extra, onclick }, label);
 
@@ -23,7 +23,7 @@ function watchBox(message, points) {
     try { await startSharing(); ready(message, 0); } catch (err) { status.textContent = err.message; e.target.disabled = false; }
   }, 'alt'), status);
   const link = `${location.origin}/watch.html?code=${session.code}`;
-  return el('div', {}, el('p', {}, 'Watch code (on the home screen, tap Watch Quick Draw)'), el('p', { className: 'code' }, session.code),
+  return el('div', {}, el('p', {}, 'Watch code (others open Quick Draw and tap Watch a drawing)'), el('p', { className: 'code' }, session.code),
     button('Share watch link', async () => {
       try { navigator.share ? await navigator.share({ url: link }) : (await navigator.clipboard.writeText(link), status.textContent = 'Link copied'); } catch {}
     }, 'alt'),
@@ -33,7 +33,8 @@ function ready(message, points = 0) {
   clearTimeout(timer);
   show(homeLink(), el('h1', {}, 'Quick Draw'), message && el('p', { className: 'question' }, message),
     scoreboard(points), el('p', {}, 'Hand the phone to the drawer. No letters or numbers!'),
-    button('Show my word', reveal), watchBox(message, points), el('button', { className: 'sound', onclick: e => { setSound(!soundOn()); e.target.textContent = soundLabel(); } }, soundLabel()), textSizeButton());
+    button('Show my word', reveal), watchBox(message, points),
+    el('a', { className: 'big alt link', href: '/watch.html' }, 'Watch a drawing'), el('button', { className: 'sound', onclick: e => { setSound(!soundOn()); e.target.textContent = soundLabel(); } }, soundLabel()), textSizeButton());
 }
 function reveal() {
   share({ status: 'waiting', strokes: [] });

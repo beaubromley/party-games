@@ -21,7 +21,7 @@ export function scoreboard(points = 0) {
     podium(scores.map((score, i) => ({ name: `Team ${i + 1}`, score }))),
     el('button', { className: 'wide', onclick: () => { pending = 0; reset(); } }, 'New game'),
     el('button', { className: 'wide', onclick: () => draw() }, 'Keep playing'),
-    el('a', { className: 'wide', href: '/' }, 'All games'));
+    el('a', { className: 'wide', href: '/' }, '← All Games'));
   const draw = () => box.replaceChildren(
     ...scores.map((score, i) => el('div', { className: 'team' },
       el('h2', {}, `Team ${i + 1}`), el('output', {}, String(score)),

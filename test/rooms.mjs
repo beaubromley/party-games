@@ -916,10 +916,36 @@ assert.deepEqual(await rows(), ['Ann: 1500', 'Bo: 500 (+1500)']);
 await solo.waitForTimeout(2600);
 assert.deepEqual(await rows(), ['Bo: 2000 (+1500)', 'Ann: 1500']);
 await solo.locator('#probe').evaluate(n => n.remove());
+// Pull to refresh, as the Home Screen app.
+{
+  const p = await phone();
+  await p.addInitScript(() => Object.defineProperty(navigator, 'standalone', { value: true }));
+  const pull = (selector, distance) => p.evaluate(([selector, distance]) => {
+    const target = document.querySelector(selector);
+    const fire = (type, y) => target.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target, clientX: 50, clientY: y })] }));
+    fire('touchstart', 100); fire('touchmove', 100 + distance); window.seen = document.querySelector('.pull')?.textContent; fire('touchend');
+  }, [selector, distance]);
+  const marked = () => p.evaluate(() => window.mark === 1);
+  await p.goto(`${base}/draw.html`); await p.evaluate(() => { window.mark = 1; });
+  await p.getByRole('link', { name: '← All Games' }).waitFor();
+  assert.ok(!(await p.locator('main').textContent()).includes('undefined'));
+  await p.screenshot({ path: '/tmp/drawhome.png', fullPage: true });
+  await pull('h1', 60); await p.waitForTimeout(400);
+  assert.equal(await p.evaluate(() => window.seen), 'Pull to refresh'); assert.ok(await marked(), 'a short pull does nothing');
+  await Promise.all([p.waitForEvent('load'), pull('h1', 260)]); assert.ok(!await marked(), 'a long pull reloads');
+  await click(p, 'Show my word'); await click(p, 'Start drawing (60s)'); await p.locator('canvas.pad').waitFor();
+  await p.evaluate(() => { window.mark = 1; });
+  await pull('canvas.pad', 260); await p.waitForTimeout(400); assert.ok(await marked()); assert.equal(await p.locator('.pull, dialog').count(), 0, 'drawing is left alone');
+  await pull('h1', 260); await p.locator('dialog.ask').getByRole('button', { name: 'Cancel' }).click(); assert.ok(await marked(), 'asks before losing a drawing');
+  await p.context().close();
+}
 const viewer = await phone();
 await click(solo, 'Let others watch on their phones');
 const watchCode = (await solo.locator('.code').textContent()).trim();
-await viewer.goto(`${base}/watch.html`); await viewer.getByPlaceholder('Watch code').fill(watchCode.toLowerCase()); await click(viewer, 'Watch');
+await viewer.goto(base);
+assert.equal(await viewer.getByText('Watch Quick Draw').count(), 0);
+await viewer.getByRole('link', { name: /^Quick Draw/ }).click(); await viewer.getByRole('link', { name: 'Watch a drawing' }).click();
+await viewer.getByRole('link', { name: '← Quick Draw' }).waitFor(); await viewer.getByPlaceholder('Watch code').fill(watchCode.toLowerCase()); await click(viewer, 'Watch');
 await viewer.getByText('Waiting for the next drawing').waitFor({ timeout: 8000 });
 await click(solo, 'Show my word'); const word = await solo.locator('h1').textContent(); await click(solo, 'Start drawing (60s)');
 await solo.locator('.countdown').waitFor(); await solo.waitForTimeout(400); await solo.screenshot({ path: '/tmp/countdown.png' });
