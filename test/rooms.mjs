@@ -400,6 +400,7 @@ const room = (game, n) => {
     assert.throws(() => rules.unsend(saved, 'p0', item), /Too late/);
   }
 }
+const yes = p => p.locator('dialog.ask .yes').click();
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
@@ -643,7 +644,7 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     await guests[1].reload(); await guests[1].getByText('Question 1 of 5').waitFor({ timeout: 8000 });
     assert.equal(await guests[1].evaluate(() => localStorage.getItem('name')), 'Cy');
   }
-  if (game === 'telephone') { guests[0].on('dialog', d => d.accept()); await click(guests[0], 'Leave game'); await guests[0].getByPlaceholder('Room code').waitFor(); await guests[0].goto(base); }
+  if (game === 'telephone') { await click(guests[0], 'Leave game'); await yes(guests[0]); await guests[0].getByPlaceholder('Room code').waitFor(); await guests[0].goto(base); }
   else await click(guests[0], 'All games');
   await guests[0].locator('.menu').waitFor();
   assert.equal(await guests[0].evaluate(() => localStorage.getItem('room')), null);
@@ -653,7 +654,6 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
 {
   const phones = [await phone(), await phone(), await phone(), await phone()];
   const [host, ...guests] = phones;
-  for (const p of phones) p.on('dialog', d => d.accept());
   await host.goto(`${base}/play.html?game=doodle`);
   await host.getByPlaceholder('Your name').fill('Ann'); await click(host, 'Create a room');
   const code = (await host.locator('.code').textContent()).trim();
@@ -670,18 +670,21 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   await host.getByText('Manage players').click();
   await host.screenshot({ path: '/tmp/manage.png', fullPage: true });
   await click(host, 'Remove Bo');
+  await click(host.locator('dialog.ask'), 'Cancel'); await host.locator('dialog.ask').waitFor({ state: 'detached' });
+  await click(host, 'Remove Bo'); await host.waitForTimeout(1700); // stays open while the screen updates
+  await host.screenshot({ path: '/tmp/ask-remove.png' }); await yes(host);
   await bo.getByText('You are no longer in that room.').waitFor({ timeout: 8000 });
-  await click(di, 'Leave game'); await di.getByPlaceholder('Room code').waitFor();
+  await click(di, 'Leave game'); await yes(di); await di.getByPlaceholder('Room code').waitFor();
   await host.getByRole('button', { name: 'Remove Di' }).waitFor({ state: 'detached', timeout: 8000 });
   await cy.waitForTimeout(1700);
   assert.equal(await ink(), before, 'drawing survives removals');
   // The host goes quiet; the last guest takes over.
   await host.close();
   sqlite.prepare('UPDATE presence SET seen = 0 WHERE code = ?').run(code);
-  await cy.reload(); await click(cy, 'Take over as host');
+  await cy.reload(); await click(cy, 'Take over as host'); await yes(cy);
   await cy.getByRole('button', { name: 'Host: skip waiting' }).waitFor({ timeout: 8000 });
   await cy.getByText('Manage players').click();
-  await click(cy, 'Remove Ann'); // one player cannot carry on
+  await click(cy, 'Remove Ann'); await yes(cy); // one player cannot carry on
   await cy.getByText(/Back to the lobby/).waitFor({ timeout: 8000 });
   await cy.screenshot({ path: '/tmp/restarted.png', fullPage: true });
   console.log('removing players: passed');

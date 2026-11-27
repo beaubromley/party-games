@@ -1,4 +1,4 @@
-import { el, homeLink, podium, timed, enterScreen, WINNER_AT } from './ui.js';
+import { el, homeLink, podium, timed, enterScreen, ask, dismiss, WINNER_AT } from './ui.js';
 import { play, soundOn, setSound } from './sound.js';
 import { keepAwake } from './wake.js';
 import { savePicture } from './save.js';
@@ -63,7 +63,7 @@ function nightBoard(host) {
   return [el('h2', {}, "Tonight's standings"),
     el('ol', { className: 'night' }, state.night.map(p => el('li', {}, `${p.name}: ${p.points} ${p.points === 1 ? 'point' : 'points'}${p.wins ? `, ${p.wins} ${p.wins === 1 ? 'win' : 'wins'}` : ''}`))),
     el('p', { className: 'fine' }, '3, 2 and 1 points for each podium finish in this room.'),
-    host && button('Reset standings', () => { if (confirm("Clear tonight's standings?")) send({ action: 'forget' }); }, 'alt')];
+    host && button('Reset standings', async () => { if (await ask("Clear tonight's standings?", 'Everyone starts the night from zero.', 'Clear standings')) send({ action: 'forget' }); }, 'alt')];
 }
 const TIMER_CHOICES = [[0, 'Off'], [30, '30s'], [60, '60s'], [90, '90s'], [120, '2 min']];
 let timerChoice = 0, deadline = 0, ticked = '';
@@ -186,17 +186,17 @@ function updateControls() {
   const hostName = state.players.find(p => p.id === state.host)?.name;
   const panel = el('details', { open: managing, ontoggle: () => { managing = panel.open; } },
     el('summary', {}, 'Manage players'),
-    others.map(p => button(`Remove ${p.name}`, () => {
-      if (confirm(`Remove ${p.name} from this game?`)) send({ action: 'kick', target: p.id });
+    others.map(p => button(`Remove ${p.name}`, async () => {
+      if (await ask(`Remove ${p.name}?`, 'They will be taken out of this game.', `Remove ${p.name}`)) send({ action: 'kick', target: p.id });
     }, 'alt')),
-    playing && button('Restart: back to lobby', () => {
-      if (confirm('End this game and send everyone back to the lobby? Scores reset.')) send({ action: 'restart' });
+    playing && button('Restart: back to lobby', async () => {
+      if (await ask('Restart the game?', 'Everyone goes back to the lobby and scores reset.', 'Back to lobby')) send({ action: 'restart' });
     }, 'alt'));
   controls.replaceChildren(...[
     host && ['drawing', 'writing', 'voting'].includes(state.phase) && button('Host: skip waiting', () => send({ action: 'next' }), 'alt'),
     host && (others.length > 0 || playing) && panel,
     !host && hostAway && el('p', {}, `${hostName}, the host, seems to be away.`),
-    !host && hostAway && button('Take over as host', () => { if (confirm('Become the host of this room?')) send({ action: 'claim' }); }, 'alt'),
+    !host && hostAway && button('Take over as host', async () => { if (await ask('Take over as host?', 'You will run the game from this phone.', 'Become host')) send({ action: 'claim' }); }, 'alt'),
   ].filter(Boolean));
 }
 async function ping() {
@@ -214,7 +214,7 @@ async function quit() {
   clearTimeout(timer); me = null;
   try { await api({ action: 'leave', ...mine }); } catch {}
 }
-function leave() { opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function leave() { dismiss(); opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -391,7 +391,7 @@ function render() {
   const exit = s.phase === 'done'
     ? button('All games', async () => { await quit(); write(null); location.href = '/'; }, 'alt')
     : button('Leave game', async () => {
-      if (!confirm('Leave this game? The others carry on without you.')) return;
+      if (!await ask('Leave this game?', 'The others carry on without you.', 'Leave game')) return;
       await quit(); leave();
     }, 'alt');
   if (['writing', 'drawing', 'voting'].includes(s.phase)) nodes.unshift(clock);

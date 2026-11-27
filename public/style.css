@@ -185,3 +185,10 @@ html.large .bubbles p { font-size: 20px; }
 .prefs .sound { margin: 0; }
 @view-transition { navigation: auto; }
 @media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }
+.ask { width: min(88vw, 360px); margin: auto; padding: 20px; border: 3px solid var(--ink); border-radius: 6px; background: var(--paper); color: var(--ink); box-shadow: 6px 6px 0 var(--ink); }
+.ask::backdrop { background: rgba(29, 27, 22, .6); }
+.ask h2 { margin: 0 0 8px; font-size: 26px; overflow-wrap: anywhere; }
+.ask button { display: block; width: 100%; margin-top: 12px; }
+.ask .yes { background: var(--red); color: #fffaf0; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: no-preference) { .ask[open] { animation: ask-in .18s ease-out; } }
+@keyframes ask-in { from { opacity: 0; transform: scale(.92); } }

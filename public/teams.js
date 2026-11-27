@@ -1,5 +1,5 @@
 // Two-team scoreboard shared by the one-phone games. Saved on this phone until reset.
-import { el, podium, WINNER_AT } from './ui.js';
+import { el, podium, ask, WINNER_AT } from './ui.js';
 import { play } from './sound.js';
 let scores = [0, 0];
 try { const saved = JSON.parse(localStorage.getItem('teams')); if (saved?.length === 2 && saved.every(Number.isInteger)) scores = saved; } catch {}
@@ -30,8 +30,8 @@ export function scoreboard(points = 0) {
         el('button', { ariaLabel: `Team ${i + 1} minus one`, onclick: () => change(i, -1) }, '-1'),
         el('button', { ariaLabel: `Team ${i + 1} plus one`, onclick: () => change(i, 1) }, '+1')))),
     (scores[0] || scores[1]) ? el('button', { className: 'wide end', onclick: finish }, 'End game: show winner') : '',
-    el('button', { className: 'wide reset', onclick: () => {
-      if (confirm('Reset both team scores to zero?')) reset();
+    el('button', { className: 'wide reset', onclick: async () => {
+      if (await ask('Reset team scores?', 'Both teams go back to zero.', 'Reset scores')) reset();
     } }, 'Reset scores'));
   draw();
   return box;

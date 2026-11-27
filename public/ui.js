@@ -39,3 +39,19 @@ export function enterScreen(node) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   node.animate?.([{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'ease-out' });
 }
+// An "are you sure?" box in the app's own style. Resolves true only for the action button.
+export function ask(title, detail, action) {
+  if (document.querySelector('dialog.ask')) return Promise.resolve(false);
+  return new Promise(resolve => {
+    const box = el('dialog', { className: 'ask', ariaLabel: title },
+      el('form', { method: 'dialog' }, el('h2', {}, title), detail && el('p', {}, detail),
+        el('button', { value: 'yes', className: 'yes' }, action),
+        el('button', { value: '', autofocus: true }, 'Cancel')));
+    box.onclose = () => { box.remove(); resolve(box.returnValue === 'yes'); };
+    box.onclick = e => { if (e.target === box) box.close(); }; // a tap outside cancels
+    document.body.append(box);
+    box.showModal();
+  });
+}
+// Closes an open question that no longer applies.
+export const dismiss = () => document.querySelector('dialog.ask')?.close('');
