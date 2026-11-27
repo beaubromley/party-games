@@ -192,3 +192,8 @@ html.large .bubbles p { font-size: 20px; }
 .ask .yes { background: var(--red); color: #fffaf0; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: no-preference) { .ask[open] { animation: ask-in .18s ease-out; } }
 @keyframes ask-in { from { opacity: 0; transform: scale(.92); } }
+.climb li { position: relative; }
+.climb li.gained { font-weight: 700; }
+.reel .answer { margin-top: 12px; }
+.reel .answer b { display: block; font-size: 20px; overflow-wrap: anywhere; }
+.reel button { margin-top: 8px; }

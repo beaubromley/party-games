@@ -400,6 +400,51 @@ const room = (game, n) => {
     assert.throws(() => rules.unsend(saved, 'p0', item), /Too late/);
   }
 }
+// Night highlights: what gets kept, and the limits.
+{
+  const play = (game, content, act) => { const r = room(game, 4); rules.start(r, content); act(r); return r; };
+  const others = (r, not) => r.players.map(p => p.id).filter(id => !not.includes(id));
+  const bluff = play('bluff', [{ question: 'q1', answer: 'truth' }], r => {
+    for (const id of rules.waitingOn(r)) rules.submitFake(r, id, 'fib ' + id);
+    const target = r.options.findIndex(o => o.authors.includes('p0'));
+    for (const id of rules.waitingOn(r)) rules.vote(r, id, id === 'p0' ? r.options.findIndex(o => o.truth) : target);
+  });
+  assert.deepEqual(bluff.highlights.map(h => [h.heading, h.text, h.credit]), [['q1', 'fib p0', 'P0 fooled 3 people']]);
+  assert.deepEqual(rules.view(bluff, 'p1').highlights, { count: 1, latest: 1 });
+  assert.ok(!JSON.stringify(rules.view(bluff, 'p1').highlights).includes('fib'), 'the list is fetched separately');
+  rules.restart(bluff); assert.equal(bluff.highlights.length, 1, 'kept across games');
+
+  const face = play('faceoff', { sets: 1, prompts: ['a', 'b', 'c', 'd'] }, r => {
+    while (r.phase === 'writing') { const id = rules.waitingOn(r)[0]; rules.submitFake(r, id, 'joke ' + id, rules.view(r, id).item); }
+    for (const id of rules.waitingOn(r)) rules.vote(r, id, 0);
+  });
+  assert.equal(face.highlights.length, 1); assert.match(face.highlights[0].credit, /2 votes$/);
+
+  const same = play('majority', { prompts: ['q', 'r'] }, r => { for (const p of r.players) rules.submitFake(r, p.id, 'pie'); rules.advance(r); });
+  assert.deepEqual(same.highlights.map(h => h.text), ['pie']);
+
+  const line = [[0, 12, [1, 1, 9, 9]]];
+  const art = play('doodle', ['w', 'x', 'y', 'z'], r => {
+    for (const p of r.players) rules.submitDrawing(r, p.id, line);
+    rules.advance(r); rules.advance(r);
+  });
+  assert.equal(art.highlights.length, 1); assert.ok(art.highlights[0].strokes);
+
+  const tele = play('telephone', {}, r => {
+    for (let g = 0; r.phase !== 'reveal'; g++) { assert.ok(g < 99); const id = rules.waitingOn(r)[0]; r.phase === 'drawing' ? rules.submitDrawing(r, id, line) : rules.submitFake(r, id, 'hi'); }
+    rules.advance(r);
+    const drawn = r.books[0].entries[1];
+    rules.vote(r, others(r, [drawn.by])[0], 1);
+    for (let g = 0; r.phase === 'reveal'; g++) { assert.ok(g < 99); rules.advance(r); }
+  });
+  assert.equal(tele.highlights.length, 1); assert.match(tele.highlights[0].credit, /Fan favorite/);
+
+  const { highlight } = await import('../lib/extras.js');
+  const full = room('doodle', 2);
+  for (let i = 0; i < 50; i++) highlight(full, { heading: String(i), strokes: i % 2 ? line : undefined });
+  assert.equal(full.highlights.length, 30); assert.equal(full.highlights.filter(h => h.strokes).length, 10);
+  assert.equal(full.highlights.at(-1).heading, '49');
+}
 const yes = p => p.locator('dialog.ask .yes').click();
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
@@ -499,7 +544,10 @@ for (const game of ['bluff', 'doodle']) {
       assert.ok(seen, 'someone sees the face of whoever fooled them');
     }
     await host.getByText(/REAL:/).waitFor({ timeout: 8000 });
-    if (round === 0) await host.screenshot({ path: `/tmp/${game}-reveal.png`, fullPage: true });
+    if (round === 0) {
+      await host.waitForTimeout(4300); await host.screenshot({ path: `/tmp/${game}-climbing.png`, fullPage: true });
+      await host.screenshot({ path: `/tmp/${game}-reveal.png`, fullPage: true });
+    }
     if (round === 1) { await guests[0].reload(); await guests[0].getByText(/REAL:/).waitFor({ timeout: 8000 }); } // rejoin
     await click(host, round === 2 ? 'Final scores' : 'Next round');
   }
@@ -507,6 +555,10 @@ for (const game of ['bluff', 'doodle']) {
   await host.locator('.podium').waitFor();
   await host.getByRole('heading', { name: 'Play again' }).waitFor();
   await host.screenshot({ path: `/tmp/${game}-final.png`, fullPage: true });
+  await host.getByText(/^Night highlights/).click(); await host.locator('.reel .answer').first().waitFor({ timeout: 8000 });
+  await host.waitForTimeout(1700); // stays open while the screen updates
+  assert.ok(await host.locator('.reel .answer').count() >= 3, 'one per round');
+  await host.screenshot({ path: `/tmp/reel-${game}.png`, fullPage: true });
   // Choosing another game from the menu starts fresh instead of reopening this room.
   await guests[1].goto(`${base}/play.html?game=majority`); await guests[1].getByPlaceholder('Room code').waitFor();
   console.log(`${game}: full game passed on 3 browsers`);
@@ -644,6 +696,12 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     await guests[1].reload(); await guests[1].getByText('Question 1 of 5').waitFor({ timeout: 8000 });
     assert.equal(await guests[1].evaluate(() => localStorage.getItem('name')), 'Cy');
   }
+  const reel = guests[0].getByText(/^Night highlights/);
+  if (await reel.count()) {
+    await reel.click(); await guests[0].locator('.reel .answer').first().waitFor({ timeout: 8000 });
+    await guests[0].screenshot({ path: `/tmp/reel-${game}.png`, fullPage: true });
+    console.log(`${game}: highlights shown`);
+  }
   if (game === 'telephone') { await click(guests[0], 'Leave game'); await yes(guests[0]); await guests[0].getByPlaceholder('Room code').waitFor(); await guests[0].goto(base); }
   else await click(guests[0], 'All games');
   await guests[0].locator('.menu').waitFor();
@@ -691,6 +749,18 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
 }
 const solo = await phone();
 await solo.goto(`${base}/draw.html`);
+// The scoreboard starts at last round's totals and order, then climbs.
+await solo.evaluate(async () => {
+  const { climbing } = await import('/ui.js');
+  const board = climbing([{ id: 'a', name: 'Ann', score: 1500 }, { id: 'b', name: 'Bo', score: 2000 }], { b: 1500 }, Date.now(), 0.5, () => false);
+  board.id = 'probe'; document.body.append(board);
+});
+const rows = () => solo.locator('#probe li').evaluateAll(list => list.sort((x, y) => x.getBoundingClientRect().top - y.getBoundingClientRect().top).map(li => li.textContent));
+await solo.waitForTimeout(200);
+assert.deepEqual(await rows(), ['Ann: 1500', 'Bo: 500 (+1500)']);
+await solo.waitForTimeout(2600);
+assert.deepEqual(await rows(), ['Bo: 2000 (+1500)', 'Ann: 1500']);
+await solo.locator('#probe').evaluate(n => n.remove());
 await click(solo, 'Show my word'); await click(solo, 'Start drawing (60s)');
 await solo.locator('.countdown').waitFor(); await solo.waitForTimeout(400); await solo.screenshot({ path: '/tmp/countdown.png' });
 await solo.locator('canvas.pad').waitFor();

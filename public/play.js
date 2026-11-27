@@ -1,4 +1,4 @@
-import { el, homeLink, podium, timed, enterScreen, ask, dismiss, WINNER_AT } from './ui.js';
+import { el, homeLink, podium, timed, enterScreen, ask, dismiss, climbing, WINNER_AT } from './ui.js';
 import { play, soundOn, setSound } from './sound.js';
 import { keepAwake } from './wake.js';
 import { savePicture } from './save.js';
@@ -63,7 +63,34 @@ function nightBoard(host) {
   return [el('h2', {}, "Tonight's standings"),
     el('ol', { className: 'night' }, state.night.map(p => el('li', {}, `${p.name}: ${p.points} ${p.points === 1 ? 'point' : 'points'}${p.wins ? `, ${p.wins} ${p.wins === 1 ? 'win' : 'wins'}` : ''}`))),
     el('p', { className: 'fine' }, '3, 2 and 1 points for each podium finish in this room.'),
-    host && button('Reset standings', async () => { if (await ask("Clear tonight's standings?", 'Everyone starts the night from zero.', 'Clear standings')) send({ action: 'forget' }); }, 'alt')];
+    host && button('Reset standings', async () => { if (await ask("Clear tonight's standings?", 'Everyone starts the night from zero, and highlights are cleared.', 'Clear standings')) send({ action: 'forget' }); }, 'alt')];
+}
+let reel = { key: '', items: [] }, reelLoading = false;
+const reelKey = () => `${me.code}:${state.highlights.latest}:${state.highlights.count}`;
+async function loadReel() {
+  if (reelLoading || reel.key === reelKey()) return;
+  reelLoading = true;
+  const mine = me, key = reelKey();
+  try {
+    const data = await api({ action: 'highlights', ...mine });
+    if (me === mine) { reel = { key, items: data.highlights }; if (FACE_SCREENS.includes(state.phase)) render(); }
+  } catch (err) { note.textContent = err.message; }
+  finally { reelLoading = false; }
+}
+function highlightReel() {
+  if (!state.highlights.count) return [];
+  const mine = reel.key.startsWith(`${me.code}:`) ? reel.items : [];
+  const panel = el('details', { className: 'reel', open: opened.has('reel'), ontoggle: () => {
+    opened[panel.open ? 'add' : 'delete']('reel');
+    if (panel.open && me) loadReel();
+  } }, el('summary', {}, `Night highlights (${state.highlights.count})`),
+    mine.length ? mine.map(h => {
+      const title = titleOf(h.game);
+      return el('section', { className: 'answer' }, el('p', { className: 'fine' }, title), el('p', {}, h.heading), h.strokes && picture(h.strokes),
+        h.text && el('b', {}, h.text), el('p', { className: 'fine' }, h.credit),
+        button('Save', () => savePicture([{ text: h.heading, big: true }, ...h.strokes ? [{ strokes: h.strokes }] : [], ...h.text ? [{ text: `“${h.text}”`, big: true }] : [], { text: h.credit }], 'highlight'), 'alt'));
+    }) : el('p', {}, 'Loading…'));
+  return [panel];
 }
 const TIMER_CHOICES = [[0, 'Off'], [30, '30s'], [60, '60s'], [90, '90s'], [120, '2 min']];
 let timerChoice = 0, deadline = 0, ticked = '';
@@ -214,7 +241,7 @@ async function quit() {
   clearTimeout(timer); me = null;
   try { await api({ action: 'leave', ...mine }); } catch {}
 }
-function leave() { dismiss(); opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function leave() { dismiss(); reel = { key: '', items: [] }; opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -257,7 +284,7 @@ function apply(data) {
   waiting.replaceChildren(...state.progress ? [el('span', {}, `${done} of ${state.progress.length} done`),
     el('span', { className: 'who-done' }, state.progress.map(p => el('span', { className: p.done ? 'done' : '', ariaLabel: `${p.name}: ${p.done ? 'done' : 'still going'}` }, p.name)))] : []);
   // Only rebuild when the screen really changes, so a half-typed answer or drawing survives polling.
-  const key = [state.game, state.step, state.sent, state.item, state.favorite, state.night.map(p => p.name + p.points).join(), state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
+  const key = [state.game, state.step, state.sent, state.item, state.favorite, state.highlights.latest, state.highlights.count, state.night.map(p => p.name + p.points).join(), state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
     FACE_SCREENS.includes(state.phase) && state.players.map(p => [p.id, p.face]).join() + state.host,
     state.requests.map(r => r.id + r.topic).join()].join(':');
   if (key !== shown) {
@@ -274,8 +301,11 @@ function apply(data) {
 function render() {
   const s = state, host = s.you === s.host;
   const nodes = [];
-  const scores = () => el('ol', { id: 'recap' }, [...s.players].sort((a, b) => b.score - a.score)
-    .map(p => el('li', {}, faceImg(p.id), `${p.name}: ${p.score}${s.gains?.[p.id] ? ` (+${s.gains[p.id]})` : ''}`)));
+  // `order` is the scoreboard's place in a results queue; with it, the points climb once the cards are in.
+  const scores = order => order !== undefined
+    ? climbing(s.players, s.gains ?? {}, reveal.at, 0.2 + order * reveal.gap + 0.5, p => faceImg(p.id))
+    : el('ol', { id: 'recap' }, [...s.players].sort((a, b) => b.score - a.score)
+      .map(p => el('li', {}, faceImg(p.id), `${p.name}: ${p.score}${s.gains?.[p.id] ? ` (+${s.gains[p.id]})` : ''}`)));
   const subject = () => [s.question && el('p', { className: 'question' }, s.question), s.drawing && picture(s.drawing)];
   if (s.phase === 'reveal') {
     const key = [me.code, game, s.index, s.round, s.matchup, s.bookNumber].join(':');
@@ -303,7 +333,7 @@ function render() {
     if (host && s.players.length >= 2) nodes.push(...startButtons());
     else nodes.push(el('p', {}, s.players.length < 2 ? 'Need at least 2 players.' : 'Waiting for the host to start.'));
     if (host) nodes.push(gameOptions());
-    nodes.push(fold('photo', 'Your photo', facePicker()), ...nightBoard(host));
+    nodes.push(fold('photo', 'Your photo', facePicker()), ...nightBoard(host), ...highlightReel());
   } else if (PARTY_GAMES[game] && s.phase !== 'done') {
     nodes.push(...partyScreen({ s, host, send, button, faceImg, scores, redraw: render, reveal }));
   } else if (s.phase === 'drawing') {
@@ -351,7 +381,7 @@ function render() {
         o.truth ? '' : `by ${o.authors.join(' & ')}${o.helped.length ? ` (AI help: ${o.helped.join(', ')})` : ''} · `, o.voters.length ? `picked by ${o.voters.join(', ')}` : 'nobody picked it'), reveal.at, 0.2 + i * reveal.gap)),
       fooledBy.length > 0 && after(el('section', { className: 'bluffed' },
         el('h2', {}, `Bluffed by ${fooledBy.map(p => p.name).join(' & ')}!`), ...fooledBy.map(p => faceImg(p.id, 'large')))),
-      after(scores()));
+      after(scores(ranked.length)));
     if (host) nodes.push(button(s.index + 1 >= s.total ? 'Final scores' : 'Next round', () => send({ action: 'next' })));
   } else {
     const top = Math.max(...s.players.map(p => p.score));
@@ -382,7 +412,7 @@ function render() {
     if (s.awards?.length) nodes.push(timed(el('section', { className: 'awards' }, el('h2', {}, 'Awards'),
       s.awards.map(a => el('div', { className: 'answer' }, el('b', {}, a.title), el('p', {}, a.names.join(' & ')),
         el('p', { className: 'fine' }, `${a.detail[0].toUpperCase()}${a.detail.slice(1)} (${a.times})`)))), ceremony.at, WINNER_AT + 1.2));
-    nodes.push(...nightBoard(host));
+    nodes.push(...nightBoard(host), ...highlightReel());
     nodes.push(topicPicker(host));
     if (host) nodes.push(el('h2', {}, 'Play again'), ...startButtons(), gameOptions());
     else nodes.push(el('p', {}, 'Waiting for the host to start another game.'));

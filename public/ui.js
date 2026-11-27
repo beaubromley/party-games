@@ -55,3 +55,30 @@ export function ask(title, detail, action) {
 }
 // Closes an open question that no longer applies.
 export const dismiss = () => document.querySelector('dialog.ask')?.close('');
+// A scoreboard that counts up from last round's totals, then slides players into their new places.
+export function climbing(players, gains, started, delay, face) {
+  const before = p => p.score - (gains[p.id] || 0);
+  const old = [...players].sort((a, b) => before(b) - before(a));
+  const rows = [...players].sort((a, b) => b.score - a.score || old.indexOf(a) - old.indexOf(b)).map(p => {
+    const text = el('span');
+    return { p, text, node: el('li', { className: gains[p.id] ? 'gained' : '' }, face(p), text) };
+  });
+  const list = el('ol', { id: 'recap', className: 'climb' }, rows.map(r => r.node));
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ease = t => { const x = Math.min(1, Math.max(0, t)); return x * x * (3 - 2 * x); };
+  const frame = () => {
+    const t = still ? Infinity : (Date.now() - started) / 1000 - delay;
+    const counted = ease(t), slid = ease((t - 1.2) / 0.8);
+    // Where each row sat in the old order.
+    const tops = new Map();
+    let y = Math.min(...rows.map(r => r.node.offsetTop));
+    for (const p of old) { tops.set(p, y); y += rows.find(r => r.p === p).node.offsetHeight; }
+    for (const { p, text, node } of rows) {
+      text.textContent = `${p.name}: ${Math.round(before(p) + (p.score - before(p)) * counted)}${gains[p.id] ? ` (+${gains[p.id]})` : ''}`;
+      node.style.transform = slid < 1 ? `translateY(${(tops.get(p) - node.offsetTop) * (1 - slid)}px)` : '';
+    }
+    if (t < 2) requestAnimationFrame(() => list.isConnected && frame());
+  };
+  frame();
+  return list;
+}

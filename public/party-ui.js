@@ -55,7 +55,7 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
       nodes.push(say(s.question), ...ranked.map((o, i) => card(el('section', { className: 'answer' + (top && o.voters.length === top ? ' winner' : '') },
         el('b', {}, o.text), el('p', {}, faceImg(o.authorId), o.author, s.gains[o.authorId] ? ` +${s.gains[o.authorId]}` : ''),
         el('p', { className: 'fine' }, s.options.length < 2 ? 'No opponent answered.' : o.voters.length ? `Picked by ${o.voters.join(', ')}` : 'No votes')), i)),
-        after(scores(), ranked.length), onward(s.last ? 'Final scores' : 'Next'));
+        after(scores(ranked.length), ranked.length), onward(s.last ? 'Final scores' : 'Next'));
     }
   } else if (s.game === 'majority') {
     nodes.push(el('p', {}, `Question ${s.index + 1} of ${s.total}`), say(s.question));
@@ -75,7 +75,7 @@ export function partyScreen({ s, host, send, button, faceImg, scores, redraw, re
           redraw();
         } }, picked?.index === i ? 'Cancel' : picked ? 'Same as selected' : 'Combine')), s.options.length - 1 - i)));
       if (host && s.options.length > 1) nodes.push(el('p', { className: 'fine' }, 'Host: if two answers mean the same thing, combine them.'));
-      nodes.push(after(scores(), s.options.length), onward(s.last ? 'Final scores' : 'Next question'));
+      nodes.push(after(scores(s.options.length), s.options.length), onward(s.last ? 'Final scores' : 'Next question'));
     }
   } else if (s.phase === 'writing') {
     nodes.push(el('p', {}, `Turn ${s.index + 1} of ${s.total}`));
