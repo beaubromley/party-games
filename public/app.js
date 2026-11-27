@@ -1,5 +1,6 @@
 import { tiltDetector, shuffle, roundSeconds } from './game.js';
 import { scoreboard } from './teams.js';
+import { soundOn, setSound } from './sound.js';
 
 const $ = id => document.getElementById(id);
 const piles = {};            // unused cards per deck, so rounds don't repeat
@@ -12,7 +13,7 @@ function show(id) {
 }
 
 function beep(freq, dur = 0.15) {
-  if (!audio) return;
+  if (!audio || !soundOn()) return;
   const o = audio.createOscillator(), g = audio.createGain();
   o.frequency.value = freq;
   g.gain.setValueAtTime(0.2, audio.currentTime);
@@ -96,6 +97,9 @@ function finish() {
   show('results');
 }
 
+const mute = () => { $('mute').textContent = `Sound: ${soundOn() ? 'on' : 'off'}`; };
+$('mute').onclick = () => { setSound(!soundOn()); mute(); };
+mute();
 $('got').onclick = () => answer('got');
 $('pass').onclick = () => answer('pass');
 $('quit').onclick = () => { stop(); show('home'); };

@@ -1,5 +1,6 @@
 // Two-team scoreboard shared by the one-phone games. Saved on this phone until reset.
-import { el, podium } from './ui.js';
+import { el, podium, WINNER_AT } from './ui.js';
+import { play } from './sound.js';
 let scores = [0, 0];
 try { const saved = JSON.parse(localStorage.getItem('teams')); if (saved?.length === 2 && saved.every(Number.isInteger)) scores = saved; } catch {}
 
@@ -14,7 +15,8 @@ export function scoreboard(points = 0) {
   };
   const reset = () => { change(0, -scores[0]); change(1, -scores[1]); };
   // The final standings, until they start over or go back to playing.
-  const finish = () => box.replaceChildren(
+  const finish = () => { play('drumroll', 0.1); play('fanfare', WINNER_AT); celebrate(); };
+  const celebrate = () => box.replaceChildren(
     el('p', { className: 'question verdict' }, scores[0] === scores[1] ? "It's a tie!" : `Team ${scores[0] > scores[1] ? 1 : 2} wins!`),
     podium(scores.map((score, i) => ({ name: `Team ${i + 1}`, score }))),
     el('button', { className: 'wide', onclick: () => { pending = 0; reset(); } }, 'New game'),

@@ -125,3 +125,25 @@ h2 { margin-bottom: 4px; }
 a.link { text-align: center; text-decoration: none; padding: 12px; border: 2px solid var(--ink); border-radius: 4px; font-weight: 600; }
 details { margin-top: 16px; }
 summary { font-weight: 600; min-height: 44px; display: list-item; padding: 10px 0; }
+.how { border: 2px solid var(--ink); border-radius: 4px; padding: 0 12px 10px; margin-bottom: 14px; background: #fffaf0; }
+.how h2 { font-size: 16px; margin-top: 10px; }
+.how ol { padding-left: 20px; line-height: 1.45; }
+.card.enter { animation: flip .6s cubic-bezier(.2, 1.4, .4, 1) both; }
+.bluffed.enter { animation: pop .5s cubic-bezier(.2, 1.6, .4, 1) both; }
+.note.card { border: 2px solid var(--ink); border-radius: 4px; padding: 10px; background: #fffaf0; }
+.note.truth { background: var(--gold); }
+@keyframes flip { from { transform: perspective(600px) rotateX(-90deg); opacity: 0; } to { transform: none; opacity: 1; } }
+.timer { position: sticky; top: env(safe-area-inset-top); z-index: 5; font-family: var(--display); font-size: 30px; font-weight: 800; text-align: center; background: var(--paper); border: 2px solid var(--ink); border-radius: 4px; margin-bottom: 10px; }
+.timer.low { background: var(--red); color: #fffaf0; }
+.who-done { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.who-done span { border: 2px solid var(--ink); border-radius: 20px; padding: 2px 10px; font-size: 14px; opacity: .55; }
+.who-done .done { opacity: 1; background: var(--green); color: #fffaf0; }
+.who-done .done::after { content: ''; display: inline-block; width: 5px; height: 10px; margin-left: 7px; border: solid currentColor; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.sound { display: block; margin: 16px auto 0; font-size: 14px; min-height: 44px; background: transparent; }
+.fav { width: 100%; margin-top: 8px; }
+.fav.on { background: var(--gold); }
+@media (prefers-reduced-motion: reduce) { .card.enter, .bluffed.enter { animation: none !important; } }
+.how { margin-top: 12px; }
+.answer .crown::after { background: #fffaf0; }
+.answer canvas { margin-bottom: 8px; }
+.bluffed { margin-top: 12px; }

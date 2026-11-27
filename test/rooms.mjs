@@ -34,7 +34,7 @@ const joined = await Promise.all(Array.from({ length: 11 }, (_, i) => i + 1).map
 const all = [first, ...joined].map(p => ({ code: p.code, playerId: p.playerId, secret: p.secret }));
 await assert.rejects(handle(query, { action: 'join', code: first.code, name: 'Thirteenth' }), /full/);
 let r = await handle(query, { action: 'start', ...all[0], step: 0, rounds: 3 });
-await Promise.all(all.map((p, i) => handle(query, { action: 'fake', ...p, step: r.state.step, text: 'lie ' + i })));
+await Promise.all(all.map((p, i) => handle(query, { action: 'fake', ...p, step: r.state.step, text: 'zzfib' + i })));
 r = await handle(query, { action: 'poll', ...all[0] });
 assert.equal(r.state.phase, 'voting'); assert.equal(r.state.options.length, 13);
 assert.ok(r.state.options.every(o => !('truth' in o) && !('authors' in o)), 'answers hidden while voting');
@@ -284,6 +284,44 @@ const room = (game, n) => {
   const now = await handle(query, { action: 'poll', ...a });
   assert.equal((await handle(query, { action: 'restart', ...a, step: now.state.step })).state.phase, 'lobby');
 }
+// Timer, game switching and favorite drawings.
+{
+  const h = await handle(query, { action: 'create', game: 'majority', name: 'A' });
+  const j = await Promise.all(['B', 'C'].map(name => handle(query, { action: 'join', code: h.code, name })));
+  const [a, b, c] = [h, ...j].map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
+  const at = async who => (await handle(query, { action: 'poll', ...who })).state;
+  await handle(query, { action: 'start', ...a, step: 0, timer: 60 });
+  let v = await at(a);
+  assert.ok(v.timeLeft > 55000 && v.timeLeft <= 60000);
+  assert.deepEqual(v.progress.map(p => p.done), [false, false, false]);
+  await new Promise(r => setTimeout(r, 40));
+  await handle(query, { action: 'fake', ...b, step: v.step, text: 'x' });
+  const next = await at(a);
+  assert.ok(next.timeLeft < v.timeLeft, 'answering does not restart the clock');
+  assert.deepEqual(next.progress.filter(p => p.done).map(p => p.name), ['B']); // join order varies
+  await assert.rejects(handle(query, { action: 'switch', ...a, step: next.step, game: 'telephone' }), /restart/);
+  v = (await handle(query, { action: 'restart', ...a, step: next.step })).state;
+  await assert.rejects(handle(query, { action: 'switch', ...b, step: v.step, game: 'telephone' }), /Only the host/);
+  await assert.rejects(handle(query, { action: 'switch', ...a, step: v.step, game: 'chess' }), /Unknown/);
+  v = (await handle(query, { action: 'switch', ...a, step: v.step, game: 'telephone' })).state;
+  assert.equal((await at(c)).game, 'telephone'); assert.equal(v.players.length, 3);
+  await handle(query, { action: 'start', ...a, step: v.step, timer: 999 });
+  assert.equal((await at(a)).timeLeft, undefined, 'bad timer values are off');
+  const t = room('telephone', 3);
+  rules.start(t, {});
+  for (let turn = 0; turn < 3; turn++) for (const id of rules.waitingOn(t)) turn % 2 ? rules.submitDrawing(t, id, [[0, 12, [1, 2, 3, 4]]]) : rules.submitFake(t, id, 'p' + turn + id);
+  const artist = t.books[0].entries[1].by, fans = ['p0', 'p1', 'p2'].filter(id => id !== artist);
+  assert.throws(() => rules.vote(t, fans[0], 1), /Pick a drawing/, 'not shown yet');
+  rules.advance(t);
+  assert.throws(() => rules.vote(t, artist, 1), /your own/);
+  assert.throws(() => rules.vote(t, fans[0], 0), /Pick a drawing/);
+  for (const id of fans) { rules.vote(t, id, 1); rules.vote(t, id, 1); }
+  assert.equal(rules.view(t, fans[0]).picked, 1);
+  while (t.phase === 'reveal') rules.advance(t);
+  const [best] = rules.view(t, 'p0').favorites;
+  assert.equal(best.votes, 2); assert.equal(best.artist, t.players.find(p => p.id === artist).name); assert.ok(best.strokes && best.prompt);
+  const m = room('majority', 2); assert.throws(() => rules.vote(m, 'p0', 0));
+}
 const { chromium, devices } = createRequire(process.env.PLAYWRIGHT_FROM || import.meta.url)('playwright');
 const types = { html: 'text/html', js: 'text/javascript', css: 'text/css', json: 'application/json', png: 'image/png' };
 const server = createServer(async (req, res) => {
@@ -459,6 +497,15 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     for (let book = 1; book <= 3; book++) for (let page = 1; page <= 3; page++) {
       await host.locator('.page').nth(page - 1).waitFor({ timeout: 8000 });
       await host.getByText(`(${book} of 3)`).waitFor({ timeout: 8000 });
+      if (book === 1 && page === 2) {
+        // Whoever didn't draw it picks it.
+        let fans = 0;
+        for (const p of phones) {
+          await p.locator('.page').nth(1).waitFor({ timeout: 8000 });
+          if (await p.locator('.fav').count()) { await p.locator('.fav').click(); await p.getByRole('button', { name: 'Your favorite' }).waitFor({ timeout: 8000 }); fans++; }
+        }
+        assert.equal(fans, 2);
+      }
       await guests[0].locator('.page').nth(page - 1).waitFor({ timeout: 8000 });
       if (book === 1 && page === 3) await host.screenshot({ path: '/tmp/telephone-reveal.png', fullPage: true });
       await click(host, page < 3 ? 'Show next page' : book < 3 ? 'Next book' : 'Finish');
@@ -468,7 +515,23 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
   assert.equal(await host.locator('.podium').count(), game === 'telephone' ? 0 : 1);
   await host.getByRole('heading', { name: 'Play again' }).waitFor();
   if (game !== 'telephone') await host.screenshot({ path: `/tmp/${game}-final.png`, fullPage: true });
-  await click(guests[0], 'All games'); await guests[0].locator('.menu').waitFor();
+  if (game === 'telephone') {
+    await host.getByRole('heading', { name: 'Fan favorite', exact: true }).waitFor();
+    await host.waitForTimeout(900); await host.screenshot({ path: '/tmp/favorite.png', fullPage: true });
+    // Switch everyone to another game with a timer, without rejoining.
+    await host.getByText('Switch game (same room)').click(); await click(host, 'Switch to Majority Rules');
+    for (const p of phones) await p.getByRole('heading', { name: 'Majority Rules' }).waitFor({ timeout: 8000 });
+    await host.screenshot({ path: '/tmp/switched.png', fullPage: true });
+    await click(host, '60s'); await click(host, 'Start: 5 questions');
+    for (const p of phones) { await p.locator('.timer:visible').waitFor({ timeout: 8000 }); assert.match(await p.locator('.timer').textContent(), /^(1:00|0:\d\d)$/); }
+    await say(guests[1], 'Dog'); await host.getByText('1 of 3 done').waitFor({ timeout: 8000 });
+    await host.screenshot({ path: '/tmp/timer.png', fullPage: true });
+    await guests[1].reload(); await guests[1].getByText('Question 1 of 5').waitFor({ timeout: 8000 });
+    assert.equal(await guests[1].evaluate(() => localStorage.getItem('name')), 'Cy');
+  }
+  if (game === 'telephone') { guests[0].on('dialog', d => d.accept()); await click(guests[0], 'Leave game'); await guests[0].getByPlaceholder('Room code').waitFor(); await guests[0].goto(base); }
+  else await click(guests[0], 'All games');
+  await guests[0].locator('.menu').waitFor();
   assert.equal(await guests[0].evaluate(() => localStorage.getItem('room')), null);
   console.log(`${game}: full game passed on 3 browsers`);
 }
