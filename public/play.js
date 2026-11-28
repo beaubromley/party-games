@@ -7,6 +7,7 @@ import { shrink, saveFace, savedFace, FACE_DAYS } from './face.js';
 import { BLUFF_TOPICS } from './topics.js';
 import { PARTY_GAMES, partyScreen, perform } from './party-ui.js';
 import { nudger } from './nudge.js';
+import { count, cue, covered, stopCount } from './count.js';
 
 const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
@@ -178,6 +179,7 @@ function nextGame(host) {
         onclick: () => request({ action: 'want', game: id }) }, titleOf(id))))),
     host && fold('switch', 'Switch to any game', Object.keys(HOW_TO).filter(id => id !== game).map(id => switchTo(id, `Switch to ${titleOf(id)}`))));
 }
+let phaseBefore = ''; // for counting down into a new screen
 let me = read(), version = 0, shown = '', state, timer, busy = false;
 const note = el('p', { className: 'note error', role: 'status' });
 const waiting = el('p', { className: 'note' });
@@ -304,12 +306,12 @@ function remember() {
 }
 // Tells the room, so the game can carry on without this phone.
 async function quit() {
-  nudge.reset();
+  nudge.reset(); stopCount(); phaseBefore = '';
   const mine = me;
   clearTimeout(timer); me = null;
   try { await api({ action: 'leave', ...mine }); } catch {}
 }
-function leave() { dismiss(); nudge.reset(); reel = { key: '', items: [] }; opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; nameDraft = null; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function leave() { dismiss(); stopCount(); phaseBefore = ''; nudge.reset(); reel = { key: '', items: [] }; opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; nameDraft = null; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -348,6 +350,10 @@ function apply(data) {
   }
   keepAwake();
   deadline = state.timeLeft === undefined ? 0 : Date.now() + state.timeLeft;
+  const next = cue(phaseBefore, state);
+  phaseBefore = state.phase;
+  if (next) count(next, soundOn(state.you === state.host));
+  else if (state.phase === 'lobby') stopCount();
   const done = state.progress?.filter(p => p.done).length;
   waiting.replaceChildren(...state.progress ? [el('span', {}, `${done} of ${state.progress.length} done`),
     el('span', { className: 'who-done' }, state.progress.map(p => el('span', { className: p.done ? 'done' : '', ariaLabel: `${p.name}: ${p.done ? 'done' : 'still going'}` }, p.name)))] : []);
@@ -388,9 +394,9 @@ function render() {
   if (s.phase === 'reveal') {
     const key = [me.code, game, s.index, s.round, s.matchup, s.bookNumber, s.stage].join(':');
     if (reveal.key !== key) {
-      reveal = { key, at: Date.now(), gap: game === 'majority' ? 0.7 : 1 };
+      reveal = { key, at: Date.now() + covered(), gap: game === 'majority' ? 0.7 : 1 };
       const cards = game === 'telephone' ? 0 : s.options?.length ?? 0;
-      for (let i = 0; i < cards; i++) play('ding', 0.2 + i * reveal.gap, host);
+      for (let i = 0; i < cards; i++) play('ding', covered() / 1000 + 0.2 + i * reveal.gap, host);
     }
   }
   const startButtons = () => PARTY_GAMES[game]
@@ -472,7 +478,7 @@ function render() {
       const favorites = s.favorites ?? [];
       if (favorites.length) {
         const key = `${me.code}:${s.step}`;
-        if (ceremony.key !== key) { ceremony = { key, at: Date.now() }; play('fanfare', 0.2, host); }
+        if (ceremony.key !== key) { ceremony = { key, at: Date.now() + covered() }; play('fanfare', covered() / 1000 + 0.2, host); }
         nodes.push(el('h2', {}, favorites.length > 1 ? 'Fan favorites (tie)' : 'Fan favorite'), ...favorites.map(f => timed(el('section', { className: 'answer winner card' },
           el('div', { className: 'crown', ariaHidden: 'true' }), picture(f.strokes), el('b', {}, f.prompt),
           el('p', {}, `Drawn by ${f.artist}. ${f.votes} ${f.votes === 1 ? 'vote' : 'votes'}.`),
@@ -482,8 +488,8 @@ function render() {
       const winners = s.players.filter(p => p.score === top).map(p => p.name);
       const key = `${me.code}:${s.step}`;
       if (ceremony.key !== key) {
-        ceremony = { key, at: Date.now() };
-        if (top > 0) { play('drumroll', 0.1, host); play('fanfare', WINNER_AT, host); }
+        ceremony = { key, at: Date.now() + covered() };
+        if (top > 0) { play('drumroll', covered() / 1000 + 0.1, host); play('fanfare', covered() / 1000 + WINNER_AT, host); }
       }
       const verdict = el('p', { className: 'question verdict' }, s.headline ? s.headline : top ? `${winners.join(' & ')} ${winners.length > 1 ? 'tie for the win!' : 'wins!'}` : 'Nobody scored. A true tie!');
       nodes.push(el('h1', {}, 'Final scores'),
@@ -492,6 +498,9 @@ function render() {
         top > 0 ? timed(scores(), ceremony.at, WINNER_AT + 0.8) : scores());
       if (s.cast) nodes.push(timed(el('section', { className: 'answer' }, el('h2', {}, 'Who was who'), s.cast.map(line => el('p', {}, line))), ceremony.at, WINNER_AT + 1));
     }
+    if (s.mostLiked?.length) nodes.push(timed(el('section', { className: 'liked-list' }, el('h2', {}, 'Most liked'),
+      s.mostLiked.map(l => el('div', { className: 'answer' }, el('b', { className: 'verse' }, l.text),
+        el('p', {}, `${l.by || 'The real answer'}: ${l.likes} ${l.likes === 1 ? 'like' : 'likes'}`)))), ceremony.at, WINNER_AT + 1.1));
     if (s.awards?.length) nodes.push(timed(el('section', { className: 'awards' }, el('h2', {}, 'Awards'),
       s.awards.map(a => el('div', { className: 'answer' }, el('b', {}, a.title), el('p', {}, a.names.join(' & ')),
         el('p', { className: 'fine' }, `${a.detail[0].toUpperCase()}${a.detail.slice(1)} (${a.times})`)))), ceremony.at, WINNER_AT + 1.2));

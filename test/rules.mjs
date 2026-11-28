@@ -612,7 +612,7 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
   assert.deepEqual(rules.view(r, 'p1').pokes, [{ n: 1, from: 'P0', text: 'Hurry up' }]);
   assert.deepEqual(rules.view(r, 'p2').pokes, []);
   assert.throws(() => rules.poke(r, 'p0', 'all', '', 50000), /done now/, 'no sending to everyone');
-  assert.throws(() => rules.poke(r, 'p0', 'p2', '', 2000), /Wait 19 more seconds/, 'one poke per sender, whoever it is for');
+  assert.throws(() => rules.poke(r, 'p0', 'p2', '', 2000), /Wait 9 more seconds/, 'one poke per sender, whoever it is for');
   rules.poke(r, 'p0', 'p2', 'y'.repeat(90), 21000);
   assert.equal(rules.view(r, 'p2').pokes[0].text.length, 60);
   for (let k = 0; k < 2; k++) rules.submitFake(r, 'p1', 'z' + k, rules.view(r, 'p1').item);
@@ -789,6 +789,9 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
   assert.equal(rules.view(r, 'p0').likeables.filter(o => o.liked).length, 2);
   rules.advance(r);
   assert.deepEqual(rules.view(r, 'p2').likes.p1, ['p0'], 'likes carry into the results');
+  assert.equal(rules.view(r, 'p0').mostLiked, undefined, 'the list waits for the end');
+  rules.advance(r);
+  assert.deepEqual(rules.view(r, 'p0').mostLiked.map(l => [l.text, l.by]).sort(), [['second', 'P1'], ['truth', '']]);
   for (const game of ['faceoff', 'rap', 'oddone', 'split', 'whosaid']) {
     const g = room(game, 4);
     rules.start(g, deals[game]?.(4) ?? { sets: 1, prompts: ['a', 'b', 'c', 'd'] });
@@ -804,6 +807,10 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
     assert.equal(Object.values(g.likes).flat().length, 1, `${game} keeps likes`);
     rules.advance(g);
     assert.deepEqual(g.likes, {}, `${game} clears them next screen`);
+    while (g.phase !== 'done') rules.advance(g);
+    const best = rules.view(g, voter).mostLiked;
+    assert.equal(best.length, 1, game);
+    assert.ok(best[0].text && best[0].by && best[0].likes === 1, game);
   }
 }
 // New names between rounds, and votes for the next game.

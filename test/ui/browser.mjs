@@ -26,7 +26,7 @@ await new Promise(r => server.listen(0, r));
 export const base = `http://localhost:${server.address().port}`;
 const browser = await chromium.launch(), errors = [];
 // The app polls every 1.5s; tests don't need to wait that long.
-const quicken = () => { const later = window.setTimeout; window.setTimeout = (fn, ms, ...rest) => later(fn, ms === 1500 ? 300 : ms, ...rest); };
+const quicken = () => { window.countStep = 60; const later = window.setTimeout; window.setTimeout = (fn, ms, ...rest) => later(fn, ms === 1500 ? 300 : ms, ...rest); };
 export async function phone(options = {}) {
   const context = await browser.newContext({ ...devices['iPhone 13'], ...options });
   await context.addInitScript(quicken);
@@ -43,6 +43,8 @@ export async function screenPage(options) {
 }
 export const click = (p, name) => p.getByRole('button', { name, exact: true }).click({ timeout: 8000 });
 export const scribble = async p => {
+  await p.locator('canvas.pad').waitFor();
+  await p.locator('.count3').waitFor({ state: 'detached' }); // the 3, 2, 1 covers the screen first
   const box = await p.locator('canvas.pad').boundingBox();
   await p.mouse.move(box.x + 40, box.y + 40); await p.mouse.down(); await p.mouse.move(box.x + 200, box.y + 180, { steps: 8 }); await p.mouse.up();
 };

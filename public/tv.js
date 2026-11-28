@@ -3,6 +3,7 @@ import { el, podium, timed, climbing, enterScreen, WINNER_AT } from './ui.js';
 import { play, soundOn, setSound, musicOn, setMusic } from './sound.js';
 import { keepAwake } from './wake.js';
 import { picture } from './canvas.js';
+import { count, cue, covered, stopCount } from './count.js';
 import { PARTY_GAMES } from './party-ui.js';
 
 const app = document.getElementById('tv');
@@ -11,7 +12,7 @@ const read = () => { try { return localStorage.getItem('tv') ?? ''; } catch { re
 const write = v => { try { v ? localStorage.setItem('tv', v) : localStorage.removeItem('tv'); } catch {} };
 const title = id => PARTY_GAMES[id]?.title ?? (id === 'doodle' ? 'Doodle Bluff' : 'Bluff');
 let code = '', version = 0, state, timer, deadline = 0, misses = 0;
-let shown = '', screenKey = '', started = 0, heard = null, poked = null;
+let shown = '', screenKey = '', started = 0, heard = null, poked = null, phaseBefore = '';
 const bubbles = el('div', { className: 'bubbles' });
 const banner = el('p', { className: 'banner lost', role: 'alert', hidden: true }, 'Connection lost. Reconnecting…');
 document.body.append(bubbles, banner);
@@ -44,7 +45,7 @@ async function poll() {
   timer = setTimeout(poll, 1500);
 }
 function join(value) {
-  code = value.toUpperCase().trim(); version = 0; state = undefined; shown = screenKey = ''; heard = poked = null; misses = 0;
+  code = value.toUpperCase().trim(); version = 0; state = undefined; shown = screenKey = phaseBefore = ''; heard = poked = null; misses = 0;
   write(code);
   history.replaceState(null, '', `?code=${code}`);
   keepAwake();
@@ -53,7 +54,7 @@ function join(value) {
   poll();
 }
 function leave(message = '') {
-  code = ''; deadline = 0; clearTimeout(timer); write(''); keepAwake(false); bubbles.replaceChildren(); banner.hidden = true;
+  code = ''; deadline = 0; stopCount(); clearTimeout(timer); write(''); keepAwake(false); bubbles.replaceChildren(); banner.hidden = true;
   history.replaceState(null, '', location.pathname);
   form(message);
 }
@@ -157,7 +158,8 @@ function finale(s) {
     const verdict = el('p', { className: 'question verdict' }, s.headline ?? (top ? `${winners.join(' & ')} ${winners.length > 1 ? 'tie for the win!' : 'wins!'}` : 'Nobody scored. A true tie!'));
     nodes.push(top > 0 ? wrap(verdict, WINNER_AT + 0.5) : verdict, top > 0 && podium(s.players.map(p => ({ name: p.name, score: p.score })), started));
   }
-  const extra = [...(s.awards ?? []).map(a => el('div', { className: 'answer' }, el('b', {}, a.title), el('p', {}, a.names.join(' & ')))),
+  const extra = [...(s.mostLiked ?? []).slice(0, 3).map(l => el('div', { className: 'answer' }, el('b', { className: 'verse' }, l.text), el('p', {}, `${l.by || 'The real answer'}: ${l.likes} ${l.likes === 1 ? 'like' : 'likes'}`))),
+    ...(s.awards ?? []).map(a => el('div', { className: 'answer' }, el('b', {}, a.title), el('p', {}, a.names.join(' & ')))),
     s.cast && el('div', { className: 'answer cast' }, el('b', {}, 'Who was who'), s.cast.map(line => el('p', {}, line)))].filter(Boolean);
   if (extra.length) nodes.push(wrap(grid(...extra), WINNER_AT + 1.2));
   return nodes;
@@ -202,10 +204,14 @@ function update() {
   deadline = s.timeLeft === undefined ? 0 : Date.now() + s.timeLeft;
   const screen = `${s.game}:${s.phase}:${s.step}`, fresh = screen !== screenKey;
   if (fresh) {
-    screenKey = screen; started = Date.now();
+    const next = cue(phaseBefore, s);
+    phaseBefore = s.phase;
+    if (next) count(next, soundOn()); else if (s.phase === 'lobby') stopCount();
+    screenKey = screen; started = Date.now() + covered();
+    const wait = covered() / 1000;
     if (['writing', 'drawing', 'voting'].includes(s.phase)) play('turn');
-    if (s.phase === 'reveal') for (let i = 0; i < cardCount(s); i++) play('ding', 0.2 + i * gap(s));
-    if (s.phase === 'done' && s.players.some(p => p.score > 0)) { play('drumroll', 0.1); play('fanfare', WINNER_AT); }
+    if (s.phase === 'reveal') for (let i = 0; i < cardCount(s); i++) play('ding', wait + 0.2 + i * gap(s));
+    if (s.phase === 'done' && s.players.some(p => p.score > 0)) { play('drumroll', wait + 0.1); play('fanfare', wait + WINNER_AT); }
   }
   // Redraw only on a real change, so the animations aren't restarted by every poll.
   const key = JSON.stringify([screen, s.players, s.likes, s.night, s.phase === 'lobby' && s.notice]);

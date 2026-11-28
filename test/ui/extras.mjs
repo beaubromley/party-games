@@ -139,7 +139,12 @@ import { base, phone, click, yes, scribble, finish } from './browser.mjs';
   const played = await host.evaluate(() => window.notes);
   await host.waitForTimeout(1500);
   assert.equal(await host.evaluate(() => window.notes), played, 'music stops when switched off');
+  await bo.evaluate(() => { window.countStep = 700; });
   await click(host, 'Start: 1 round');
+  await bo.locator('.count3').getByText('Get ready!').waitFor({ timeout: 8000 });
+  await bo.screenshot({ path: '/tmp/count.png' });
+  await bo.locator('.count3').waitFor({ state: 'detached', timeout: 8000 });
+  await bo.evaluate(() => { window.countStep = 60; });
   for (const [i, p] of phones.entries()) for (let k = 0; k < 2; k++) {
     await p.getByText(`Your prompt ${k + 1} of 2`).waitFor({ timeout: 8000 });
     await p.locator('input').first().fill(`answer ${i} ${k}`); await click(p, 'Send');
@@ -155,6 +160,12 @@ import { base, phone, click, yes, scribble, finish } from './browser.mjs';
   await writer.screenshot({ path: '/tmp/likes.png', fullPage: true });
   await voter.locator('main button.big:not(.alt):enabled').first().click();
   await voter.getByRole('button', { name: /^Liked \(1\)|^Like \(1\)/ }).first().waitFor({ timeout: 8000 });
+  for (let i = 0; i < 12 && !await host.getByText('Most liked').count(); i++) {
+    const skip = host.getByRole('button', { name: /^(Next|Final scores|Host: skip waiting)$/ }).first();
+    await skip.click({ timeout: 8000 }); await host.waitForTimeout(600);
+  }
+  await host.getByRole('heading', { name: 'Most liked' }).waitFor({ timeout: 8000 });
+  await host.waitForTimeout(4000); await host.screenshot({ path: '/tmp/mostliked.png', fullPage: true });
   for (const p of phones) await p.context().close();
   console.log('answers, likes, names and next game: passed');
 }
