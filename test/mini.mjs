@@ -21,6 +21,8 @@ for (const id of MINI) {
   const good = [1, 2, 3].map(seed => run(id, seed).score), idle = [1, 2, 3].reduce((sum, seed) => sum + run(id, seed, { play: false }).score, 0) / 3;
   console.log(`  ${id}: good ${good.join(', ')} idle ${Math.round(idle)}`);
   assert.ok(good.every(s => s >= 50), `${id} rewards good play: ${good}`);
+  // Every cactus and buzzard can be cleared.
+  if (id === 'cactus') for (let seed = 1; seed <= 12; seed++) assert.equal(run(id, seed).hits, 0, `cactus course ${seed} is fair`);
   assert.ok(idle < Math.min(...good) / 2, `${id} pays little for doing nothing: ${idle}`);
   assert.equal(run(id, 2).score, good[1], `${id} is the same course for the same seed`);
   assert.ok(run(id, 4, { from: 14 }).score >= 0, `${id} can be joined late`);

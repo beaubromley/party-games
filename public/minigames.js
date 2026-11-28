@@ -27,19 +27,37 @@ function base(extra) {
   };
 }
 
+// Big, dark and heading left, wings beating.
+function buzzard(c, x, y, beat) {
+  const wing = Math.sin(beat);
+  poly(c, '#4a3550', [[x - 2, y], [x + 8, y - 2 - wing * 22], [x + 24, y - 6 - wing * 16], [x + 14, y + 3]]);
+  gem(c, '#5d4366', x, y + 2, 17, 10);
+  poly(c, '#3d2c45', [[x + 12, y], [x + 28, y - 3], [x + 26, y + 8]]);
+  gem(c, '#e8a090', x - 15, y - 3, 7, 7, { sides: 7 });
+  poly(c, '#f2b23e', [[x - 20, y - 5], [x - 31, y + 1], [x - 19, y + 1]]);
+  gem(c, '#1d2433', x - 17, y - 5, 1.8, 1.8, { sides: 6, depth: 0 });
+  poly(c, '#6f5379', [[x - 6, y + 1], [x + 4, y - wing * 20], [x + 16, y - 3 - wing * 12], [x + 10, y + 5]]);
+}
 function cactus(rand) {
-  const START = 200, GROW = 230 / SECONDS, GROUND = 400, X = 70, AIR = 0.69;
+  const START = 255, GROW = 300 / SECONDS, GROUND = 400, X = 70, AIR = 0.69;
   const distance = t => START * t + GROW * t * t / 2;
   const speedAt = d => Math.sqrt(START ** 2 + 2 * GROW * d);
   const course = [];
-  for (let d = 430; d < distance(SECONDS) + 500;) {
-    const p = Math.min(1, d / distance(SECONDS)), double = rand() < 0.15 + 0.35 * p;
-    const w = double ? 36 : 18, h = 28 + Math.floor(rand() * (14 + 14 * p));
+  for (let d = 400; d < distance(SECONDS) + 500;) {
+    const p = Math.min(1, d / distance(SECONDS)), speed = speedAt(d), last = course.at(-1);
+    // A swooping buzzard: keep your feet on the ground until it has gone over.
+    if (p > 0.15 && !last?.fly && rand() < 0.22) {
+      course.push({ d: d + 0.1 * speed, w: 34, fly: true });
+      d += 0.1 * speed + 34 + 0.5 * speed;
+      continue;
+    }
+    const roll = rand(), count = roll < 0.28 * p ? 3 : roll < 0.2 + 0.5 * p ? 2 : 1;
+    const w = count * 18, h = 30 + Math.floor(rand() * (14 + 10 * p));
     course.push({ d, w, h });
-    d += w + AIR * speedAt(d) * (1.35 - 0.2 * p + rand() * 0.8) + 30;
+    d += w + AIR * speed * (1.08 - 0.08 * p + rand() * 0.5) + 14;
   }
   return base({
-    course, y: 0, v: 0, wanted: -1, d: 0, landed: -1,
+    course, hits: 0, y: 0, v: 0, wanted: -1, d: 0, landed: -1,
     update(dt, t) {
       this.now = t; this.d = distance(t);
       if (this.y === 0 && t - this.wanted < 0.12) { this.v = 620; this.wanted = -1; }
@@ -48,7 +66,8 @@ function cactus(rand) {
         if (o.done) continue;
         const x = X + o.d - this.d;
         if (x > X + 14) break;
-        if (x + o.w > X - 12 && this.y < o.h - 6) { o.done = true; this.gain(-5, 'Ouch!'); this.fx.shake(t); this.fx.burst(t, X, GROUND - this.y - 20, ['#2f7d5b', '#3f9a72', '#ffffff']); }
+        const into = o.fly ? this.y > 22 : this.y < o.h - 3;
+        if (x + o.w > X - 12 && into) { o.done = true; this.hits++; this.gain(-15, o.fly ? 'Stay down!' : 'Ouch!'); this.fx.shake(t); this.fx.burst(t, X, GROUND - this.y - 20, ['#2f7d5b', '#3f9a72', '#ffffff']); }
         else if (x + o.w < X - 12) { o.done = true; this.gain(10, '+10'); }
       }
     },
@@ -74,6 +93,7 @@ function cactus(rand) {
       for (const o of course) {
         const x = X + o.d - this.d;
         if (x < -60 || x > WIDTH + 20) continue;
+        if (o.fly) { buzzard(c, x + o.w / 2, GROUND - 76 + Math.sin(this.now * 7 + o.d) * 3, this.now * 11 + o.d); shadow(c, x + o.w / 2, GROUND + 3, 18, 4, 0.12); continue; }
         for (let k = 0; k < o.w; k += 18) {
           const mid = x + k + 9, h = o.h - (k ? 6 : 0), green = '#3c9468';
           c.save(); c.translate(mid, GROUND); c.scale(1.34, 1.14); c.translate(-mid, -GROUND);
@@ -342,17 +362,18 @@ function stack() {
       const top = this.tower.at(-1), x = this.position(this.now), left = Math.max(x - this.w / 2, top.x - top.w / 2), right = Math.min(x + this.w / 2, top.x + top.w / 2);
       this.ready = this.now + 0.18;
       const level = this.tower.length, color = level % COLORS.length;
-      if (right - left <= 0) { this.gain(-5, 'Missed!'); this.fx.shake(this.now); this.cuts.push({ t: this.now, x, w: this.w, level, color }); this.w = Math.max(this.w, 90); return; }
-      if (Math.abs(x - top.x) < 7) { this.tower.push({ x: top.x, w: this.w }); this.landed = this.now; this.gain(15, 'Perfect!', GREAT); this.fx.burst(this.now, top.x, this.screenY(level) + H / 2, ['#ffffff', '#ffe27a'], { n: 18, speed: 230, up: 20 }); return; }
+      // Starting over costs points, whether the block missed or the tower got too thin to build on.
+      const restart = why => { this.gain(-10, `${why} -10`); this.fx.shake(this.now); this.w = 120; this.tower.push({ x: 180, w: 120, fresh: true }); this.landed = this.now; };
+      if (right - left <= 0) { this.cuts.push({ t: this.now, x, w: this.w, level, color }); return restart('Missed!'); }
+      if (Math.abs(x - top.x) < 7) { this.tower.push({ x: top.x, w: this.w }); this.landed = this.now; this.gain(15, 'Perfect! +15', GREAT); this.fx.burst(this.now, top.x, this.screenY(level) + H / 2, ['#ffffff', '#ffe27a'], { n: 18, speed: 230, up: 20 }); return; }
       // The overhanging piece breaks off and falls.
       const over = this.w - (right - left);
       this.cuts.push({ t: this.now, x: x > top.x ? right + over / 2 : left - over / 2, w: over, level, color });
       this.landed = this.now;
       this.w = right - left;
       this.tower.push({ x: (left + right) / 2, w: this.w });
+      if (this.w < 16) return restart('Too thin!');
       this.gain(10, '+10');
-      // Too thin to build on: a fresh, wider ledge.
-      if (this.w < 14) { this.w = 110; this.tower.push({ x: 180, w: 110 }); this.gain(0, 'New ledge', GREAT); }
     },
     draw(c) {
       const height = Math.min(1, this.lift / (H * 14));
@@ -363,11 +384,11 @@ function stack() {
       for (let i = 0; i < 3; i++) { c.globalAlpha = 1 - dusk * 0.4 - night * 0.55; cloud(c, wrap(i * 170 + this.now * (6 + i * 3), 500) - 70, 150 + i * 90 + this.lift * 0.35, 0.9 - i * 0.15); c.globalAlpha = 1; }
       ridge(c, '#8fa8c8', 450 + this.lift * 0.5, 130, 40, 150, HEIGHT + this.lift);
       ridge(c, '#6f9a72', 490 + this.lift * 0.8, 76, 110, 110, HEIGHT + this.lift);
-      const slab = (x, w, y, i) => block(c, COLORS[i % COLORS.length], x - w / 2, y, w, H, 12);
+      const slab = (x, w, y, i, fresh) => block(c, fresh ? '#8a93a6' : COLORS[i % COLORS.length], x - w / 2, y, w, H, 12);
       if (this.screenY(0) < HEIGHT + 20) block(c, '#8a7f76', 66, this.screenY(0) + H, 228, 40, 14);
       this.tower.forEach((b, i) => {
         const squash = i === this.tower.length - 1 && i ? Math.max(0, 1 - (this.now - this.landed) / 0.15) : 0, y = this.screenY(i);
-        if (y < HEIGHT + 20) slab(b.x, b.w + squash * 6, y + squash * 2, i);
+        if (y < HEIGHT + 20) slab(b.x, b.w + squash * 6, y + squash * 2, i, b.fresh);
       });
       for (const cut of this.cuts) {
         const k = this.now - cut.t;
@@ -377,30 +398,59 @@ function stack() {
       const y = this.screenY(this.tower.length) - 8, drop = pop((this.now - this.ready + 0.18) / 0.22);
       shadow(c, this.x + 6, y + H + 4, this.w / 2, 3, 0.14);
       c.globalAlpha = Math.min(1, drop + 0.2); slab(this.x, this.w, y - (1 - drop) * 10, this.tower.length); c.globalAlpha = 1;
+      // The rules, always in view.
+      c.fillStyle = 'rgba(18,26,50,.7)'; c.beginPath(); c.roundRect(22, 10, 316, 30, 8); c.fill();
+      words(c, 'Land +10   Perfect +15   Start over -10', 180, 31, 14, '#ffffff');
     },
   });
 }
 
+// Every pie shares a tin and a crust. The bad ones are given away by a black filling and smoke, or a lit fuse.
+function pie(c, kind, t) {
+  const burnt = kind === 'burnt', gold = kind === 'gold';
+  if (gold) { c.fillStyle = 'rgba(255,220,90,.35)'; c.beginPath(); c.arc(0, -1, 29, 0, 7); c.fill(); }
+  poly(c, '#d3dae4', [[-23, -1], [23, -1], [15, 13], [-15, 13]]); poly(c, '#aeb8c8', [[4, -1], [23, -1], [15, 13], [2, 13]]);
+  gem(c, burnt ? '#2b1d18' : gold ? '#f2a51e' : '#c9304a', 0, -3, 18, 8, { sides: 10 });
+  const crust = burnt ? '#6b4630' : gold ? '#ffe27a' : '#f2c473';
+  for (const k of [-12, -4, 4, 12]) beam(c, crust, k - 6, -10 + Math.abs(k) / 4, k + 6, 2 - Math.abs(k) / 4, 4);
+  beam(c, burnt ? '#5a3a28' : gold ? '#f7c948' : '#e8ad5c', -22, -2, 0, 2, 5); beam(c, burnt ? '#4a2f20' : gold ? '#f7c948' : '#e8ad5c', 0, 2, 22, -2, 5);
+  if (burnt) for (let k = 0; k < 3; k++) { const u = (t * 1.3 + k / 3) % 1; c.globalAlpha = 0.55 * (1 - u); gem(c, '#8a8580', -9 + k * 9 + Math.sin(u * 6) * 3, -12 - u * 22, 3 + u * 5, 3 + u * 5, { sides: 7 }); c.globalAlpha = 1; }
+  if (kind === 'fuse') { beam(c, '#2b2b30', 2, -7, 6, -17, 2.6); beam(c, '#2b2b30', 6, -17, 12, -20, 2.6); star(c, '#ff8a1e', 13, -21, 7 + Math.sin(t * 30) * 2, t * 9); star(c, '#fff1a8', 13, -21, 3.5, -t * 12); }
+  if (gold) star(c, '#ffffff', -10 + Math.sin(t * 3) * 6, -9, 4, t * 4, 4);
+}
 function pies(rand) {
-  const items = [];
-  for (let at = 0.5; at < SECONDS;) {
-    const p = hard(at);
-    items.push({ at, x: 28 + rand() * (WIDTH - 56), anvil: rand() < 0.18 + 0.24 * p, speed: 190 + 220 * p + rand() * 40 });
-    at += 0.8 - 0.48 * p;
+  const FLOOR = 482, items = [];
+  const arrives = q => q.at + FLOOR / q.speed;
+  for (let at = 0.4; at < SECONDS - 0.5;) {
+    const p = hard(at), storm = at > 23, roll = rand();
+    const kind = roll < 0.2 + 0.18 * p ? (rand() < 0.5 ? 'burnt' : 'fuse') : roll > 0.94 ? 'gold' : 'pie';
+    const speed = (210 + 190 * p + rand() * 60) * (kind === 'gold' ? 1.25 : 1);
+    const item = { at, kind, bad: kind === 'burnt' || kind === 'fuse', speed, x: 40 + rand() * (WIDTH - 80), sway: p > 0.3 && rand() < 0.35 ? 16 + 26 * p : 0, phase: rand() * 6 };
+    // Never put a bad pie right on top of a good one: there must always be a way to take one and leave the other.
+    for (let tries = 0; tries < 12 && items.some(o => o.bad !== item.bad && Math.abs(arrives(o) - arrives(item)) < 0.3 && Math.abs(o.x - item.x) < 130); tries++) item.x = 40 + rand() * (WIDTH - 80);
+    items.push(item);
+    at += storm ? 0.26 : 0.62 - 0.26 * p;
   }
   const height = (i, t) => -20 + i.speed * (t - i.at);
+  const across = (i, t) => clamp(i.x + i.sway * Math.sin((t - arrives(i)) * 4) , 28, WIDTH - 28);
   return base({
-    items, x: 180, shown: 180, landed: -1,
+    items, x: 180, shown: 180, landed: -1, streak: 0, stormed: false, across, arrives,
+    times() { return 1 + Math.min(2, Math.floor(this.streak / 5)); },
     update(dt, t) {
       this.now = t; this.shown += (this.x - this.shown) * Math.min(1, dt * 30);
+      if (t > 23 && !this.stormed) { this.stormed = true; this.fx.say(t, 'Pie storm!', GREAT); this.fx.shake(t, 4); }
       for (const i of items) {
         if (i.done || t < i.at) continue;
-        const y = height(i, t);
-        if (y > 452 && y < 490 && Math.abs(i.x - this.x) < 44) {
+        const y = height(i, t), x = across(i, t);
+        if (y > 452 && y < 492 && Math.abs(x - this.x) < 40) {
           i.done = i.caught = true; this.landed = t;
-          if (i.anvil) { this.gain(-20, 'Clang!'); this.fx.shake(t, 9); this.fx.burst(t, i.x, 462, ['#ffd45c', '#ffffff', '#59606e'], { n: 16 }); }
-          else { this.gain(10, '+10'); this.fx.burst(t, i.x, 462, ['#c9304a', '#f2c473', '#ffffff'], { n: 10, speed: 120, up: 110 }); }
-        } else if (y >= 490) { i.done = true; this.fx.burst(t, i.x, 496, i.anvil ? ['#b9a489', '#8d7a63'] : ['#c9304a', '#f2c473', '#d99a45'], { n: i.anvil ? 8 : 14, speed: 140, up: 40, life: 0.5 }); }
+          if (i.bad) { this.streak = 0; this.gain(-20, i.kind === 'fuse' ? 'Kaboom! -20' : 'Burnt! -20'); this.fx.shake(t, 9); this.fx.burst(t, x, 462, i.kind === 'fuse' ? ['#ffd45c', '#ff8a3c', '#ffffff'] : ['#3a2a22', '#6a5a52', '#9a8a82'], { n: 20 }); }
+          else {
+            const times = this.times(), points = (i.kind === 'gold' ? 30 : 10) * times; this.streak++;
+            this.gain(points, this.times() > times ? `Streak x${this.times()}!` : `+${points}`, i.kind === 'gold' ? '#b57a00' : GOOD);
+            this.fx.burst(t, x, 462, i.kind === 'gold' ? ['#ffe27a', '#ffffff', '#f2b134'] : ['#c9304a', '#f2c473', '#ffffff'], { n: i.kind === 'gold' ? 22 : 10, speed: 130, up: 110 });
+          }
+        } else if (y >= 492) { i.done = true; if (!i.bad) this.streak = 0; this.fx.burst(t, x, 496, i.bad ? ['#6a5a52', '#8d7a63'] : ['#c9304a', '#f2c473', '#d99a45'], { n: i.bad ? 8 : 14, speed: 140, up: 40, life: 0.5 }); }
       }
     },
     down(x) { this.x = clamp(x, 36, WIDTH - 36); }, move(x) { this.down(x); },
@@ -433,23 +483,13 @@ function pies(rand) {
       for (const i of items) {
         const y = height(i, this.now);
         if (this.now < i.at || y > HEIGHT + 20 || i.done) continue;
-        shadow(c, i.x, 502, 8 + 14 * clamp(y / 500, 0, 1), 4, 0.06 + 0.14 * clamp(y / 500, 0, 1));
-        c.save(); c.translate(i.x, y); c.scale(1.18, 1.18);
-        if (i.anvil) {
-          c.rotate(Math.sin(this.now * 5 + i.x) * 0.08);
-          poly(c, '#7b8496', [[-27, -13], [-17, -17], [23, -17], [23, -13]]);
-          poly(c, '#59606e', [[-27, -13], [23, -13], [18, -3], [9, -2], [-10, -2], [-16, -8]]);
-          poly(c, '#474d5a', [[-9, -2], [9, -2], [6, 6], [-6, 6]]);
-          poly(c, '#626a79', [[-6, 6], [6, 6], [17, 15], [-17, 15]]); poly(c, '#3c414c', [[6, 6], [17, 15], [3, 15]]);
-        } else {
-          c.rotate(Math.sin(this.now * 4 + i.x) * 0.16);
-          poly(c, '#d3dae4', [[-23, -1], [23, -1], [15, 13], [-15, 13]]); poly(c, '#aeb8c8', [[4, -1], [23, -1], [15, 13], [2, 13]]);
-          gem(c, '#c9304a', 0, -3, 18, 8, { sides: 10 });
-          for (const k of [-12, -4, 4, 12]) beam(c, '#f2c473', k - 6, -10 + Math.abs(k) / 4, k + 6, 2 - Math.abs(k) / 4, 4);
-          beam(c, '#e8ad5c', -22, -2, 0, 2, 5); beam(c, '#e8ad5c', 0, 2, 22, -2, 5);
-        }
+        const x = across(i, this.now), near = clamp(y / 500, 0, 1);
+        shadow(c, x, 502, 8 + 14 * near, 4, 0.06 + 0.14 * near);
+        c.save(); c.translate(x, y); c.scale(1.18, 1.18); c.rotate(Math.sin(this.now * 4 + i.x) * 0.16);
+        pie(c, i.kind, this.now + i.phase);
         c.restore();
       }
+      if (this.streak >= 5) words(c, `Streak x${this.times()}`, 180, 66, 17, '#ffffff', '#b9502f');
     },
   });
 }
@@ -596,14 +636,27 @@ function copycat(rand) {
 function derby(rand) {
   const FROM = 150, PLATE = 420;
   const pitches = [];
+  // How each pitch travels: u is how far along it is (0 to 1 at the plate), x its sideways break, y its loft.
+  const KINDS = {
+    fastball: { name: 'Fastball', time: p => 0.9 - 0.42 * p, u: s => s, x: () => 0, y: s => 14 * Math.sin(Math.PI * s) },
+    changeup: { name: 'Changeup', time: p => 1.35 - 0.45 * p, u: s => s < 1 ? 1 - (1 - s) ** 1.9 * 0.85 - 0.15 * (1 - s) : 1 + (s - 1) * 0.15, x: () => 0, y: s => 22 * Math.sin(Math.PI * s) },
+    curve: { name: 'Curveball', time: p => 1.25 - 0.45 * p, u: s => 0.45 * s + 0.55 * s ** 3, x: (s, side) => side * 95 * Math.sin(Math.PI * Math.min(1, s) ** 1.6), y: s => 30 * Math.sin(Math.PI * s) },
+    slow: { name: 'Slow lob', time: p => 1.9 - 0.45 * p, u: s => s, x: () => 0, y: s => 150 * Math.sin(Math.PI * s) },
+  };
   for (let at = 0.8; at < SECONDS - 0.5;) {
-    const p = hard(at), slow = rand() < 0.28 * p;
-    const flight = (1.15 - 0.55 * p + (rand() - 0.5) * 0.18) * (slow ? 1.4 : 1);
-    pitches.push({ at, flight, slow });
-    at += flight + 0.65 - 0.3 * p;
+    const p = hard(at), roll = rand(), mix = pitches.length < 2 ? 0 : 0.38 + 0.34 * p;
+    const kind = roll >= mix ? 'fastball' : roll < mix * 0.42 ? 'curve' : roll < mix * 0.76 ? 'changeup' : 'slow';
+    const flight = KINDS[kind].time(p) * (0.94 + rand() * 0.12);
+    pitches.push({ at, flight, kind, side: rand() < 0.5 ? -1 : 1 });
+    at += flight + 0.55 - 0.28 * p;
   }
+  // Where the ball is, s being the share of the flight gone by.
+  const spot = (q, s) => {
+    const k = KINDS[q.kind], u = k.u(s);
+    return { x: 180 + k.x(s, q.side), y: lerp(FROM, PLATE, u) - (s < 1 ? k.y(s) : 0), u };
+  };
   return base({
-    pitches, swung: -1, hit: null,
+    pitches, spot, swung: -1, hit: null,
     current(t) { return pitches.find(q => t >= q.at && t < q.at + q.flight + 0.3); },
     update(dt, t) { this.now = t; },
     down() {
@@ -613,10 +666,10 @@ function derby(rand) {
       if (!q || q.swung) return;
       q.swung = true;
       const early = q.at + q.flight - this.now, off = Math.abs(early);
-      if (off < 0.05) { this.fx.shake(this.now, 7); this.fx.burst(this.now, 180, PLATE, ['#ffffff', '#ffd45c', '#ff8a3c'], { n: 24, speed: 260 }); this.gain(15, 'HOME RUN!', BAD); this.hit = { at: this.now, up: 520, side: -early * 900 }; q.gone = true; }
-      else if (off < 0.095) { this.fx.burst(this.now, 180, PLATE, ['#ffffff', '#ffd45c'], { n: 12 }); this.gain(8, 'Double! +8'); this.hit = { at: this.now, up: 340, side: -early * 1500 }; q.gone = true; }
-      else if (off < 0.15) { this.fx.burst(this.now, 180, PLATE, ['#ffffff'], { n: 7 }); this.gain(3, 'Single +3'); this.hit = { at: this.now, up: 200, side: -early * 1500 }; q.gone = true; }
-      else this.gain(0, early > 0 ? 'Too early' : 'Too late', BAD);
+      if (off < 0.032) { this.fx.shake(this.now, 7); this.fx.burst(this.now, 180, PLATE, ['#ffffff', '#ffd45c', '#ff8a3c'], { n: 24, speed: 260 }); this.gain(15, 'HOME RUN!', BAD); this.hit = { at: this.now, up: 520, side: -early * 900 }; q.gone = true; }
+      else if (off < 0.065) { this.fx.burst(this.now, 180, PLATE, ['#ffffff', '#ffd45c'], { n: 12 }); this.gain(8, 'Double! +8'); this.hit = { at: this.now, up: 340, side: -early * 1500 }; q.gone = true; }
+      else if (off < 0.105) { this.fx.burst(this.now, 180, PLATE, ['#ffffff'], { n: 7 }); this.gain(3, 'Single +3'); this.hit = { at: this.now, up: 200, side: -early * 1500 }; q.gone = true; }
+      else this.gain(-3, `${KINDS[q.kind].name}: ${early > 0 ? 'too early' : 'too late'}`, BAD);
     },
     draw(c) {
       sky(c, '#7ab8e6', '#d9eef8', 130);
@@ -648,25 +701,45 @@ function derby(rand) {
       gem(c, '#e8b58e', 180, FROM - 8, 7, 7.5); gem(c, '#2b3550', 180, FROM - 13, 7.5, 4.5, { sides: 8 });
       c.restore();
       if (q && !q.gone) {
-        const u = (this.now - q.at) / q.flight, y = lerp(FROM, PLATE, u), r = 4 + 9 * u;
-        shadow(c, 180, lerp(FROM + 38, PLATE + 22, u), r, r / 3, 0.18);
-        gem(c, '#ffffff', 180, y - Math.sin(Math.PI * clamp(u, 0, 1)) * 14, r, r, { sides: 11, depth: 0.2 });
+        const s = (this.now - q.at) / q.flight, at = spot(q, s), r = 4 + 9 * clamp(at.u, 0, 1.15);
+        shadow(c, at.x, lerp(FROM + 38, PLATE + 22, at.u), r, r / 3, 0.18);
+        c.save(); c.translate(at.x, at.y); gem(c, '#ffffff', 0, 0, r, r, { sides: 11, depth: 0.2 });
+        // The seams spin: fast and sideways on a curve.
+        c.rotate(this.now * (q.kind === 'curve' ? 22 * q.side : q.kind === 'fastball' ? 9 : 2.5));
         c.strokeStyle = '#d6453a'; c.lineWidth = r / 6;
-        for (const k of [-1, 1]) { c.beginPath(); c.arc(180 + k * r * 1.25, y - Math.sin(Math.PI * clamp(u, 0, 1)) * 14, r * 0.8, k > 0 ? 2.4 : -0.75, k > 0 ? 3.9 : 0.75); c.stroke(); }
+        for (const k of [-1, 1]) { c.beginPath(); c.arc(k * r * 1.25, 0, r * 0.8, k > 0 ? 2.4 : -0.75, k > 0 ? 3.9 : 0.75); c.stroke(); }
+        c.restore();
       }
-      // Batter and bat.
+      // Batter and bat. From a stance with the bat up behind him, it drops back, cuts across the plate
+      // (about 0.07s after the tap) and finishes up toward the pitcher.
       const since = this.swung >= 0 ? this.now - this.swung : 1;
-      const turn = since < 0.14 ? ease(since / 0.14) : since < 0.45 ? 1 - ease((since - 0.14) / 0.31) : 0, angle = lerp(0.9, -3.5, turn);
-      const bx = 268, hand = [bx - 24 - turn * 8, PLATE - 6];
+      const REST = -1.15, CONTACT = Math.PI, END = 4.45;
+      const angle = since < 0.07 ? lerp(REST, CONTACT, since / 0.07) : since < 0.17 ? lerp(CONTACT, END, ease((since - 0.07) / 0.1))
+        : since < 0.34 ? END : since < 0.5 ? lerp(END, REST + Math.PI * 2, ease((since - 0.34) / 0.16)) : REST;
+      const turn = since < 0.12 ? ease(since / 0.12) : since < 0.34 ? 1 : since < 0.5 ? 1 - ease((since - 0.34) / 0.16) : 0;
+      const bx = 268, hand = [lerp(bx + 2, bx - 28, turn), lerp(PLATE - 26, PLATE - 6, Math.min(1, since < 0.34 ? since / 0.07 : turn))];
+      const tipAt = a => [hand[0] + Math.cos(a) * 82, hand[1] + Math.sin(a) * (Math.sin(a) < 0 ? 72 : 42)];
+      const bat = () => {
+        const tip = tipAt(angle);
+        beam(c, '#c98a4b', hand[0], hand[1], tip[0], tip[1], 5, 13); gem(c, '#c98a4b', tip[0], tip[1], 6.5, 6.5, { sides: 8 });
+      };
       shadow(c, bx, PLATE + 52, 30, 8);
-      beam(c, '#e9edf3', bx - 14, PLATE + 50, bx - 4, PLATE + 20, 12, 13); beam(c, '#e9edf3', bx + 16, PLATE + 48, bx + 6, PLATE + 20, 12, 13);
-      gem(c, '#3b6fb8', bx, PLATE - 2, 20 - turn * 3, 28, { sides: 9 });
-      gem(c, '#e8b58e', bx - 4, PLATE - 38, 13, 14); gem(c, '#2b4f8c', bx - 3, PLATE - 45, 15, 10, { sides: 9 });
-      poly(c, '#2b4f8c', [[bx - 14, PLATE - 44], [bx - 29, PLATE - 39], [bx - 13, PLATE - 38]]);
-      const tip = [hand[0] + Math.cos(angle) * 78, hand[1] - Math.sin(angle) * -50];
-      if (since < 0.2) { c.globalAlpha = 0.35 * (1 - since / 0.2); poly(c, '#ffffff', [hand, ...Array.from({ length: 6 }, (_, i) => { const a = lerp(angle, Math.min(0.9, angle + 1.8), i / 5); return [hand[0] + Math.cos(a) * 80, hand[1] + Math.sin(a) * 52]; })]); c.globalAlpha = 1; }
-      beam(c, '#c98a4b', hand[0], hand[1], tip[0], tip[1], 5, 13); gem(c, '#c98a4b', tip[0], tip[1], 6.5, 6.5, { sides: 8 });
-      beam(c, '#3b6fb8', bx - 8, PLATE - 14, hand[0], hand[1], 11, 8); gem(c, '#e8b58e', hand[0], hand[1], 6, 6);
+      // The stretch of the swing behind him is drawn before the body.
+      const behind = since >= 0.5 || since < 0.02;
+      if (behind) bat();
+      beam(c, '#e9edf3', bx - 14 - turn * 5, PLATE + 50, bx - 4, PLATE + 20, 12, 13); beam(c, '#e9edf3', bx + 16, PLATE + 48, bx + 6, PLATE + 20, 12, 13);
+      gem(c, '#3b6fb8', bx - turn * 4, PLATE - 2, 20 - turn * 3, 28, { sides: 9 });
+      const hx = bx - 4 - turn * 5;
+      gem(c, '#e8b58e', hx, PLATE - 38, 13, 14); gem(c, '#2b4f8c', hx + 1, PLATE - 45, 15, 10, { sides: 9 });
+      poly(c, '#2b4f8c', [[hx - 10, PLATE - 44], [hx - 25, PLATE - 39], [hx - 9, PLATE - 38]]);
+      // A white streak follows the barrel through the zone.
+      if (since > 0.02 && since < 0.24) {
+        const tail = Math.max(REST + 0.8, angle - 1.9);
+        c.globalAlpha = 0.45 * (since < 0.1 ? 1 : (0.24 - since) / 0.14);
+        poly(c, '#ffffff', [hand, ...Array.from({ length: 8 }, (_, i) => tipAt(lerp(tail, angle, i / 7)))]); c.globalAlpha = 1;
+      }
+      if (!behind) bat();
+      beam(c, '#3b6fb8', bx - 8 - turn * 4, PLATE - 14, hand[0], hand[1], 11, 8); gem(c, '#e8b58e', hand[0], hand[1], 6.5, 6.5);
       if (this.hit && this.now - this.hit.at < 0.9) {
         const k = this.now - this.hit.at;
         for (let i = 3; i >= 0; i--) {
@@ -686,20 +759,24 @@ function fieldgoal(rand) {
   const post = t => BX + Math.max(0, hard(t) - 0.3) * 120 * Math.sin(t * 1.1);
   const half = t => 68 - 36 * hard(t);
   return base({
-    winds, post, half, kicks: 0, kick: null,
-    wind() { return Math.round(this.windNow ?? 0); },
+    winds, post, half, kicks: 0, kick: null, fanX: 52, spin: 0,
     update(dt, t) {
       this.now = t;
-      if (!this.kick) this.windNow = winds[this.kicks % 60] * (25 + 110 * hard(t));
+      // The fan slides to whichever side the next wind comes from, and spins as hard as it blows.
+      const wind = this.kick?.wind ?? this.windNow ?? 0;
+      this.fanX += ((wind >= 0 ? 52 : WIDTH - 52) - this.fanX) * Math.min(1, dt * 14);
+      this.spin += dt * (8 + Math.abs(wind) * 0.22);
       const k = this.kick;
       if (k && !k.done && t >= k.at + FLIGHT) {
         k.done = true;
         const off = Math.abs(k.to + k.wind - post(t));
         k.good = off < half(t);
-        if (k.good) { this.gain(off < half(t) * 0.35 ? 15 : 10, off < half(t) * 0.35 ? 'Split them!' : "It's good!"); this.fx.burst(t, k.to + k.wind, GY, ['#ffffff', '#ffd45c', '#e4572e', '#6fb7e0'], { n: off < half(t) * 0.35 ? 28 : 14, speed: 230 }); }
-        else { this.gain(0, off < half(t) + 9 ? 'Doink!' : 'No good', BAD); if (off < half(t) + 9) { this.fx.shake(t, 6); this.fx.burst(t, k.to + k.wind, GY, ['#ffd45c'], { n: 8 }); } }
+        if (k.good) { this.gain(off < half(t) * 0.35 ? 15 : 10, off < half(t) * 0.35 ? 'Nothing but trash!' : "It's in!"); this.fx.burst(t, k.to + k.wind, GY, ['#ffffff', '#ffd45c', '#e4572e', '#6fb7e0'], { n: off < half(t) * 0.35 ? 28 : 14, speed: 230 }); }
+        else { this.gain(0, off < half(t) + 9 ? 'Off the rim!' : 'Missed', BAD); if (off < half(t) + 9) { this.fx.shake(t, 6); this.fx.burst(t, k.to + k.wind, GY, ['#ffd45c'], { n: 8 }); } }
       }
       if (k && t >= k.at + FLIGHT + 0.3) { this.kick = null; this.kicks++; }
+      // The next gust is set the moment the paper is back in hand.
+      if (!this.kick) this.windNow = winds[this.kicks % 60] * (25 + 110 * hard(t));
     },
     up(x, y, from) {
       if (this.kick) return;
@@ -707,62 +784,115 @@ function fieldgoal(rand) {
       this.kick = { at: this.now, wind: this.windNow ?? 0, to: flick ? clamp(BX + (x - from.x) / (from.y - y) * (BY - GY), -60, WIDTH + 60) : x };
     },
     draw(c) {
-      sky(c, '#35476f', '#a8c4de', 250);
-      for (const x of [36, 324]) { beam(c, '#2b3550', x, 232, x, 70, 7, 4); block(c, '#e9edf3', x - 22, 52, 44, 20, 5); for (let i = 0; i < 4; i++) gem(c, '#fff1b8', x - 15 + i * 10, 62, 3.5, 4, { sides: 6, depth: 0.1 }); c.globalAlpha = 0.09; poly(c, '#fff6cf', [[x - 20, 72], [x + 20, 72], [180 + (x - 180) * 0.2 + 90, 300], [180 + (x - 180) * 0.2 - 90, 300]]); c.globalAlpha = 1; }
-      poly(c, '#4a5a80', [[0, 196], [90, 180], [180, 188], [270, 180], [360, 196], [360, 252], [0, 252]]);
-      const cheer = this.kick?.done && this.kick.good;
-      for (let row = 0; row < 3; row++) for (let i = 0; i < 30; i++) gem(c, ['#e4572e', '#f2c14e', '#ffffff', '#6fb7e0', '#7a6ac0'][(i * 7 + row * 3) % 5], i * 12.5 + (row % 2) * 6, 204 + row * 15 - (cheer ? Math.abs(Math.sin(this.now * 15 + i * 1.7 + row)) * 6 : 0), 4, 4.5, { sides: 6 });
-      block(c, '#2f4f7a', -8, 244, 372, 12, 6);
-      c.fillStyle = gradient(c, 255, HEIGHT, '#4f9248', '#6bb455'); c.fillRect(0, 255, WIDTH, HEIGHT - 255);
-      [[256, 270], [292, 316], [352, 388], [438, 490]].forEach(([a, b]) => { c.fillStyle = 'rgba(255,255,255,.08)'; c.fillRect(0, a, WIDTH, b - a); });
-      c.strokeStyle = 'rgba(255,255,255,.75)'; c.lineWidth = 2.5; c.beginPath();
-      for (const y of [270, 316, 388, 490]) { c.moveTo(0, y); c.lineTo(WIDTH, y); }
-      for (const k of [-1, 1]) { c.moveTo(180 + k * 110, 256); c.lineTo(180 + k * 250, HEIGHT); }
-      c.stroke();
-      for (const [y, size] of [[304, 12], [344, 15], [416, 19]]) for (const k of [-1, 1]) words(c, y < 320 ? '10' : y < 360 ? '20' : '30', 180 + k * (y - 190) * 0.72, y, size, 'rgba(255,255,255,.55)');
-      const g = post(this.now), w = half(this.now), gold = '#f2c230';
-      const wind = this.kick?.wind ?? this.windNow ?? 0, size = Math.abs(wind) * 0.55 + 10, way = Math.sign(wind) || 1;
-      shadow(c, g + 4, 274, 22, 5);
-      beam(c, gold, g, 274, g, 214, 10, 8); block(c, '#2f4f7a', g - 8, 250, 16, 26, 5); beam(c, gold, g - w - 3, 214, g + w + 3, 214, 8);
-      for (const k of [-1, 1]) {
-        const x = g + k * w;
-        beam(c, gold, x, 214, x, 96, 7, 5);
-        const flap = Math.sin(this.now * 9 + k) * 3;
-        poly(c, '#e4572e', [[x, 96], [x + way * (8 + size * 0.3), 100 + flap], [x, 106]]);
-      }
+      const g = post(this.now), w = half(this.now), RIM = 178;
+      const wind = this.kick?.wind ?? this.windNow ?? 0, way = wind >= 0 ? 1 : -1, force = Math.min(1, Math.abs(wind) / 135);
+      // The office: wall, window with blinds, a clock, and a wooden floor.
+      c.fillStyle = gradient(c, 0, 222, '#7d93ad', '#a9bccd'); c.fillRect(0, 0, WIDTH, 222);
+      for (let n = 0; n < 9; n++) poly(c, 'rgba(255,255,255,.07)', [[n * 44 - 6, 0], [n * 44 + 16, 0], [n * 44 + 16, 222], [n * 44 - 6, 222]]);
+      block(c, '#e9edf3', 20, 20, 96, 82, 7); c.fillStyle = gradient(c, 27, 95, '#8fcbe8', '#e2f1f8'); c.fillRect(27, 27, 82, 68);
+      poly(c, '#7f9bb8', [[27, 95], [27, 72], [44, 72], [44, 60], [62, 60], [62, 80], [80, 80], [80, 54], [96, 54], [96, 70], [109, 70], [109, 95]]);
+      for (let y = 30; y < 56; y += 7) block(c, '#f4f6f9', 27, y, 82, 2.5, 3);
+      gem(c, '#2b3550', 290, 54, 25, 25, { sides: 14, depth: 0.2 }); gem(c, '#f4f6f9', 290, 54, 20, 20, { sides: 14, depth: 0.06 });
+      beam(c, '#2b3550', 290, 54, 290, 40, 3); beam(c, '#c4402c', 290, 54, 290 + Math.cos(this.now * 0.9) * 15, 54 + Math.sin(this.now * 0.9) * 15, 2);
+      block(c, '#5f7490', -8, 214, 372, 12, 6);
+      const planks = ['#c9915c', '#bd8450', '#d49d68', '#b57d4a'];
+      for (let n = -6; n < 7; n++) poly(c, planks[(n + 8) % 4], [[180 + n * 30, 224], [180 + (n + 1) * 30, 224], [180 + (n + 1) * 112, HEIGHT], [180 + n * 112, HEIGHT]]);
+      poly(c, 'rgba(52,70,110,.55)', [[112, 270], [248, 270], [300, 430], [60, 430]]); poly(c, 'rgba(240,244,250,.16)', [[124, 278], [236, 278], [280, 420], [80, 420]]);
+
       // Wind gauge.
-      c.fillStyle = 'rgba(20,30,55,.62)'; c.beginPath(); c.roundRect(118, 326, 124, 48, 10); c.fill();
-      words(c, `Wind ${Math.round(Math.abs(wind) / 5)}`, BX, 346, 16, '#ffffff');
-      beam(c, '#ffd45c', BX - way * size / 2, 361, BX + way * size / 2, 361, 6);
-      poly(c, '#ffd45c', [[BX + way * (size / 2 + 12), 361], [BX + way * size / 2, 352], [BX + way * size / 2, 370]]);
-      let x = BX, y = BY, r = 24, tumble = 0;
+      c.fillStyle = 'rgba(20,30,55,.68)'; c.beginPath(); c.roundRect(118, 322, 124, 52, 10); c.fill();
+      words(c, `Wind ${(Math.abs(wind) / 25).toFixed(1)}`, BX, 344, 17, '#ffffff');
+      const size = force * 62 + 10;
+      beam(c, '#ffd45c', BX - way * size / 2, 360, BX + way * size / 2, 360, 6);
+      poly(c, '#ffd45c', [[BX + way * (size / 2 + 12), 360], [BX + way * size / 2, 351], [BX + way * size / 2, 369]]);
+
+      // Air streaming off the fan, faster and brighter in a stronger wind.
+      for (let n = 0; n < 9; n++) {
+        const u = (this.now * (0.35 + force * 1.3) + n * 0.37) % 1, x = this.fanX + way * (30 + u * 290), y = 232 + (n * 41) % 180 + Math.sin(u * 9 + n) * 5, long = 12 + force * 34;
+        c.globalAlpha = Math.sin(u * Math.PI) * (0.25 + force * 0.55); beam(c, '#ffffff', x, y, x - way * long, y, 2.5, 0.5); c.globalAlpha = 1;
+      }
+
+      // The wastebasket: far rim and dark inside first, then the paper if it's going in, then the front.
+      const tall = 48 + w * 0.75, low = w * 0.74, foot = RIM + tall, lip = w * 0.24;
+      shadow(c, g + 6, foot + 4, low + 16, 9, 0.3);
+      c.fillStyle = '#1f2636'; c.beginPath(); c.ellipse(g, RIM, w, lip, 0, 0, Math.PI * 2); c.fill();
+      c.strokeStyle = '#7f8ba3'; c.lineWidth = 5; c.beginPath(); c.ellipse(g, RIM, w, lip, 0, Math.PI, 0); c.stroke();
+      const front = () => {
+        const rim = a => [g + Math.cos(a) * w, RIM + Math.sin(a) * lip], base = a => [g + Math.cos(a) * low, foot + Math.sin(a) * lip * 0.7];
+        for (let n = 0; n < 7; n++) {
+          const a = Math.PI - n * Math.PI / 7, z = a - Math.PI / 7;
+          poly(c, shade('#5b6784', 0.28 - n * 0.095), [rim(a), rim(z), base(z), base(a)]);
+        }
+        c.strokeStyle = 'rgba(255,255,255,.14)'; c.lineWidth = 1.2; c.beginPath();
+        for (let n = 1; n < 14; n++) { const a = Math.PI - n * Math.PI / 14; c.moveTo(...rim(a)); c.lineTo(...base(a)); }
+        c.stroke();
+        c.strokeStyle = '#c3ccdd'; c.lineWidth = 5; c.beginPath(); c.ellipse(g, RIM, w, lip, 0, 0, Math.PI); c.stroke();
+      };
+
+      let x = BX, y = BY, r = 25, turn = 0, inside = false;
       if (this.kick) {
-        const u = Math.min(1, (this.now - this.kick.at) / FLIGHT), over = Math.max(0, this.now - this.kick.at - FLIGHT);
-        x = lerp(BX, this.kick.to, u) + this.kick.wind * u * u; y = lerp(BY, GY, u) - Math.sin(Math.PI * u) * 50 + over * over * 900; r = lerp(24, 10, u) - over * 6; tumble = (this.now - this.kick.at) * 15;
-        shadow(c, x, lerp(BY + 22, 272, u), r * 0.8, r / 4);
-      } else { shadow(c, BX, BY + 27, 21, 6); poly(c, '#e4572e', [[BX - 16, BY + 27], [BX, BY + 16], [BX + 16, BY + 27]]); }
-      c.save(); c.translate(x, y); c.rotate(this.kick ? Math.sin(tumble) * 0.35 : 0);
-      const flip = this.kick ? 0.45 + 0.55 * Math.abs(Math.cos(tumble)) : 1, tall = r * flip, wide = r * 0.66;
-      gem(c, '#9a4f2c', 0, 0, wide, Math.max(wide * 0.8, tall), { sides: 10 });
-      beam(c, '#ffffff', 0, -tall * 0.45, 0, tall * 0.45, 2.2);
-      for (const k of [-0.28, 0, 0.28]) beam(c, '#ffffff', -wide * 0.28, tall * k, wide * 0.28, tall * k, 1.6);
-      c.restore();
-      if (!this.kick) words(c, 'Flick to kick. Allow for the wind.', BX, 508, 15, '#ffffff', '#2f5f2a');
+        const k = this.kick, u = Math.min(1, (this.now - k.at) / FLIGHT), over = Math.max(0, this.now - k.at - FLIGHT);
+        x = lerp(BX, k.to, u) + k.wind * u * u; y = lerp(BY, RIM - 6, u) - Math.sin(Math.PI * u) * 105; r = lerp(25, 13, u); turn = (this.now - k.at) * 9 * (k.to < BX ? -1 : 1);
+        if (over > 0 && k.good) { inside = true; y = RIM - 6 + over * over * 700; x = lerp(x, g, Math.min(1, over * 5)); }
+        if (over > 0 && !k.good) {
+          // It glances away and drops to the floor.
+          const side = k.to + k.wind >= g ? 1 : -1, rimmed = Math.abs(k.to + k.wind - g) < w + 9;
+          x += side * over * (rimmed ? 230 : 90); y = Math.min(foot + 8, RIM - 6 - (rimmed ? over * 260 : 0) + over * over * 1100);
+        }
+        shadow(c, x, Math.max(y + r, lerp(BY + 28, foot + 6, u)), r * 0.9, r / 4, inside ? 0 : 0.2);
+      } else shadow(c, BX, BY + 27, 24, 6);
+      const ball = () => {
+        c.save(); c.translate(x, y); c.rotate(turn);
+        gem(c, '#eef0f4', 0, 0, r, r * 0.93, { sides: 9, turn: 0.1, depth: 0.3 });
+        // Creases.
+        poly(c, '#d5dae4', [[-r * 0.65, -r * 0.2], [-r * 0.05, r * 0.05], [-r * 0.45, r * 0.5]]);
+        poly(c, '#ffffff', [[-r * 0.1, -r * 0.7], [r * 0.45, -r * 0.25], [-r * 0.05, r * 0.05]]);
+        poly(c, '#c3cad8', [[r * 0.1, r * 0.15], [r * 0.7, r * 0.1], [r * 0.25, r * 0.65]]);
+        c.strokeStyle = 'rgba(60,72,100,.45)'; c.lineWidth = 1; c.beginPath(); c.moveTo(-r * 0.65, -r * 0.2); c.lineTo(-r * 0.05, r * 0.05); c.lineTo(r * 0.45, -r * 0.25); c.moveTo(-r * 0.05, r * 0.05); c.lineTo(r * 0.25, r * 0.65); c.stroke();
+        c.restore();
+      };
+      if (inside) { c.save(); c.beginPath(); c.rect(0, 0, WIDTH, RIM); c.ellipse(g, RIM, w, lip, 0, 0, Math.PI); c.clip(); ball(); c.restore(); }
+      front();
+
+      // The desk fan.
+      const fx = this.fanX, fy = 300;
+      shadow(c, fx, 372, 30, 7, 0.3);
+      block(c, '#3a4258', fx - 22, 360, 44, 10, 7); beam(c, '#59627a', fx, 362, fx, fy + 20, 9, 7);
+      c.save(); c.translate(fx, fy); c.scale(0.86, 1);
+      gem(c, '#aab4c8', 0, 0, 37, 37, { sides: 14, depth: 0.2 }); gem(c, '#2f374b', 0, 0, 32, 32, { sides: 14, depth: 0.12 });
+      for (let n = 0; n < 3; n++) {
+        const a = this.spin + n * 2.094;
+        poly(c, '#6fb7e0', [[0, 0], [Math.cos(a - 0.5) * 29, Math.sin(a - 0.5) * 29], [Math.cos(a) * 30, Math.sin(a) * 30]]);
+        poly(c, '#3f8fc0', [[0, 0], [Math.cos(a) * 30, Math.sin(a) * 30], [Math.cos(a + 0.45) * 25, Math.sin(a + 0.45) * 25]]);
+      }
+      c.strokeStyle = 'rgba(220,228,242,.55)'; c.lineWidth = 1.3; c.beginPath();
+      for (let n = 0; n < 8; n++) { c.moveTo(0, 0); c.lineTo(Math.cos(n * 0.785) * 34, Math.sin(n * 0.785) * 34); }
+      c.stroke(); c.beginPath(); c.arc(0, 0, 21, 0, Math.PI * 2); c.stroke();
+      gem(c, '#e4572e', 0, 0, 7.5, 7.5, { sides: 9 }); c.restore();
+      // Ribbons tied to the cage point downwind.
+      for (const k of [-14, 12]) {
+        const tip = 16 + force * 26, wave = Math.sin(this.now * (8 + force * 14) + k) * 4;
+        poly(c, '#ffd45c', [[fx + way * 30, fy + k - 3], [fx + way * (30 + tip), fy + k + wave + (1 - force) * 12], [fx + way * 30, fy + k + 3]]);
+      }
+
+      if (!inside) ball();
+      if (!this.kick) words(c, 'Flick the paper in. Mind the fan.', BX, 508, 15, '#ffffff', '#6a4527');
     },
   });
 }
 
 export const GAMES = {
-  cactus: { title: 'Cactus Hop', how: 'Tap to jump the cactuses.', make: cactus },
+  cactus: { title: 'Cactus Hop', how: 'Jump cactuses. Stay down for buzzards.', make: cactus },
   ski: { title: 'Downhill Dash', how: 'Drag to steer. Clean runs score more.', make: ski },
   turkey: { title: 'Flappy Turkey', how: 'Tap to flap through the gaps.', make: turkey },
   hoops: { title: 'Hot Shot', how: 'Flick the ball at the moving hoop.', make: hoops },
-  stack: { title: 'Stack Up', how: 'Tap to drop each block on the tower.', make: stack },
-  pies: { title: 'Pie Catch', how: 'Drag the basket. Catch pies, dodge anvils.', make: pies },
+  stack: { title: 'Stack Up', how: 'Tap to stack. A miss or too thin costs 10.', make: stack },
+  pies: { title: 'Pie Catch', how: 'Catch pies. Dodge burnt ones and lit fuses.', make: pies },
   bonk: { title: 'Critter Bonk', how: 'Tap the gophers. Spare the bunnies.', make: bonk },
   copycat: { title: 'Copy Cat', how: 'Watch the pattern, then tap it back.', make: copycat },
   derby: { title: 'Home Run Derby', how: 'Tap to swing as the ball arrives.', make: derby },
-  fieldgoal: { title: 'Field Goal', how: 'Flick to kick it through the posts.', make: fieldgoal },
+  // Began life as a field goal; the id stays so phones already in a party don't trip over a new one.
+  fieldgoal: { title: 'Wastebasket Toss', how: 'Flick paper into the bin. Mind the fan.', make: fieldgoal },
 };
 export const STEP = 1 / 120;
 // A game ready to play, optionally joined part way through (earlier points don't count).
