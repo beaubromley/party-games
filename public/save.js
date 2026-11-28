@@ -26,7 +26,7 @@ export function compose(parts) {
   for (const p of sized) {
     if (p.strokes) {
       ctx.fillStyle = '#ffffff'; ctx.fillRect(PAD, y, SIDE, SIDE);
-      ctx.drawImage(picture(p.strokes), PAD, y, SIDE, SIDE);
+      ctx.drawImage(picture(p.strokes, p.palette), PAD, y, SIDE, SIDE);
       ctx.strokeStyle = '#1d1b16'; ctx.lineWidth = 3; ctx.strokeRect(PAD, y, SIDE, SIDE);
     } else {
       ctx.fillStyle = '#1d1b16'; ctx.font = font(p); ctx.textBaseline = 'top';

@@ -262,3 +262,15 @@ canvas.mini { display: block; margin: 0; width: min(100%, calc((100dvh - 110px) 
 .pickmini small { display: block; font-size: 14px; font-weight: 400; }
 .arcadecall { margin-top: 12px; }
 .trophy { text-align: center; }
+/* Group Doodle */
+.arcade.doodle { z-index: 22; }
+.doodle h2 { margin: 2px 0 4px; font-size: 21px; }
+.doodlehud { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; font-weight: 700; }
+.yourcolor { display: flex; align-items: center; gap: 8px; margin: 0; }
+.yourcolor i { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--ink); }
+.doodleclock { font-size: 24px; font-variant-numeric: tabular-nums; }
+canvas.shared { width: min(100%, calc(100dvh - 260px)); min-width: 240px; margin: 0 auto; border-radius: 8px; }
+.painters { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; margin: 10px 0; font-weight: 600; }
+.painters span { display: flex; align-items: center; gap: 5px; }
+.painters i { width: 14px; height: 14px; border-radius: 50%; }
+.doodlecall { margin-top: 12px; }

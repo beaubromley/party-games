@@ -57,3 +57,11 @@
 .tv .podium .place { flex: 1; }
 .tv .cast p { display: inline-block; margin: 0 0.6em; }
 .tv .podium .who b { font-size: 1.1rem; }
+/* Group Doodle takes over the screen. */
+.tv .mural { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; gap: 2em; padding: 1.5em; background: var(--paper); text-align: center; }
+.tv .mural canvas { width: auto; height: min(92vh, 62vw); aspect-ratio: 1; margin: 0; background: #fff; border: 3px solid var(--ink); border-radius: 6px; }
+.tv .mural > div { max-width: 24em; }
+.tv .mural .clock { font-size: 3em; }
+.tv .mural .painters { font-size: 1.2em; }
+.tv .mural button { font: inherit; padding: 0.4em 0.9em; background: transparent; border: 2px solid var(--ink); border-radius: 4px; color: var(--ink); }
+@media (orientation: portrait) { .tv .mural { flex-direction: column; gap: 1em; } .tv .mural canvas { height: min(92vw, 62vh); } }

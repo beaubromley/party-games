@@ -855,4 +855,5 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
   assert.match(rules.view(v, 'p0').answer, /pies\./);
 }
 await import('./mini.mjs');
+await import('./doodle.mjs');
 console.log('rules checks passed');

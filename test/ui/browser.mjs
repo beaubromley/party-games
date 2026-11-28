@@ -26,7 +26,7 @@ await new Promise(r => server.listen(0, r));
 export const base = `http://localhost:${server.address().port}`;
 const browser = await chromium.launch(), errors = [];
 // The app polls every 1.5s; tests don't need to wait that long.
-const quicken = () => { window.countStep = 60; const later = window.setTimeout; window.setTimeout = (fn, ms, ...rest) => later(fn, ms === 1500 ? 300 : ms, ...rest); };
+const quicken = () => { window.countStep = 60; window.doodleStep = 150; const later = window.setTimeout; window.setTimeout = (fn, ms, ...rest) => later(fn, ms === 1500 ? 300 : ms, ...rest); };
 export async function phone(options = {}) {
   const context = await browser.newContext({ ...devices['iPhone 13'], ...options });
   await context.addInitScript(quicken);

@@ -8,6 +8,7 @@ import { BLUFF_TOPICS } from './topics.js';
 import { PARTY_GAMES, partyScreen, perform } from './party-ui.js';
 import { nudger } from './nudge.js';
 import { arcade } from './arcade.js';
+import { groupDoodle } from './doodle.js';
 import { count, cue, covered, stopCount } from './count.js';
 
 const app = document.getElementById('app');
@@ -193,6 +194,11 @@ let controlsKey = '', managing = false, hostAway = false, pinged = 0;
 // A poke must report its own errors, and must not be swallowed while another tap is in flight.
 const nudge = nudger(async body => { const mine = me; const data = await api({ ...body, ...mine }); if (me === mine) apply(data); });
 const games = arcade(async body => { const mine = me; const data = await api({ ...mine, ...body }); if (me === mine) apply(data); });
+const shared = groupDoodle({
+  send: async body => { const mine = me; const data = await api({ ...mine, ...body }); if (me === mine) apply(data); },
+  ask: body => api({ ...me, ...body }),
+  onOpen: () => games.hide(),
+});
 const FACE_SCREENS = ['lobby', 'reveal', 'done']; // screens with nothing half-typed to lose
 const faceImg = (id, extra = '') => faces[id] && el('img', { className: 'face ' + extra, src: faces[id], alt: '' });
 async function loadFaces() {
@@ -308,12 +314,12 @@ function remember() {
 }
 // Tells the room, so the game can carry on without this phone.
 async function quit() {
-  nudge.reset(); games.reset(); stopCount(); phaseBefore = '';
+  nudge.reset(); games.reset(); shared.reset(); stopCount(); phaseBefore = '';
   const mine = me;
   clearTimeout(timer); me = null;
   try { await api({ action: 'leave', ...mine }); } catch {}
 }
-function leave() { dismiss(); stopCount(); phaseBefore = ''; games.reset(); nudge.reset(); reel = { key: '', items: [] }; opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; nameDraft = null; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function leave() { dismiss(); stopCount(); phaseBefore = ''; games.reset(); shared.reset(); nudge.reset(); reel = { key: '', items: [] }; opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; nameDraft = null; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -373,6 +379,7 @@ function apply(data) {
   updateControls();
   nudge.update(state);
   games.update(state);
+  shared.update(state);
   showReactions();
   loadFaces();
 }
@@ -524,7 +531,7 @@ function render() {
   if (!['lobby', 'done'].includes(s.phase)) nodes.push(el('p', { className: 'fine party-code' }, `Room code ${me.code}`));
   if (['writing', 'drawing', 'voting'].includes(s.phase)) nodes.unshift(clock);
   if (['reveal', 'done'].includes(s.phase)) nodes.push(cheers);
-  nodes.push(nudge.panel, games.panel, controls, waiting, note, el('div', { className: 'prefs' }, soundButton(), musicButton(), textSizeButton()), exit,
+  nodes.push(nudge.panel, shared.panel, games.panel, controls, waiting, note, el('div', { className: 'prefs' }, soundButton(), musicButton(), textSizeButton()), exit,
     game === 'bluff' && el('footer', {}, 'Trivia: ', el('a', { href: 'https://opentdb.com' }, 'Open Trivia Database'), ' (CC BY-SA 4.0), filtered, plus some written for this app.'));
   app.replaceChildren(...nodes.filter(Boolean));
   // Jump to the top for a new screen only, not when browsing topics.

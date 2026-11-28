@@ -5,6 +5,7 @@ import { keepAwake } from './wake.js';
 import { picture } from './canvas.js';
 import { count, cue, covered, stopCount } from './count.js';
 import { PARTY_GAMES } from './party-ui.js';
+import { mural } from './tv-doodle.js';
 
 const app = document.getElementById('tv');
 const REACTIONS = ['Ha!', 'Wow!', 'Bravo!', 'No way!'];
@@ -13,6 +14,11 @@ const write = v => { try { v ? localStorage.setItem('tv', v) : localStorage.remo
 const title = id => PARTY_GAMES[id]?.title ?? (id === 'doodle' ? 'Doodle Bluff' : 'Bluff');
 let code = '', version = 0, state, timer, deadline = 0, misses = 0;
 let shown = '', screenKey = '', started = 0, heard = null, poked = null, phaseBefore = '';
+const shared = mural(async body => {
+  const res = await fetch('/api/game', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, action: 'doodle-watch', code }), signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error('Server problem');
+  return res.json();
+});
 const bubbles = el('div', { className: 'bubbles' });
 const banner = el('p', { className: 'banner lost', role: 'alert', hidden: true }, 'Connection lost. Reconnecting…');
 document.body.append(bubbles, banner);
@@ -34,7 +40,7 @@ async function poll() {
     if (code !== mine) return;
     if (!res.ok) throw new Error(data.error || 'Server problem');
     misses = 0; banner.hidden = true;
-    if (data.state && data.version >= version) { version = data.version; state = data.state; update(); }
+    if (data.state && data.version >= version) { version = data.version; state = data.state; update(); shared.update(state.doodle); }
   } catch (err) {
     if (code !== mine) return;
     if (/not found/i.test(err.message)) return leave(state ? 'That party has ended.' : 'No party has that code.');
@@ -54,7 +60,7 @@ function join(value) {
   poll();
 }
 function leave(message = '') {
-  code = ''; deadline = 0; stopCount(); clearTimeout(timer); write(''); keepAwake(false); bubbles.replaceChildren(); banner.hidden = true;
+  code = ''; deadline = 0; shared.update(); stopCount(); clearTimeout(timer); write(''); keepAwake(false); bubbles.replaceChildren(); banner.hidden = true;
   history.replaceState(null, '', location.pathname);
   form(message);
 }

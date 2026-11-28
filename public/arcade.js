@@ -84,6 +84,8 @@ export function arcade(send) {
       if (wanted && !closedHere && next.phase !== 'lobby' && !before?.mini) show();
       if (box.isConnected) frame();
     },
+    // Something else took over the screen.
+    hide() { closedHere = true; close(); },
     reset() { state = mini = undefined; done.clear(); panel.hidden = true; close(); },
   };
 }
