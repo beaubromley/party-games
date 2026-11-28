@@ -6,7 +6,7 @@
   let start = null, pulled = 0, label;
   const hide = () => { start = null; pulled = 0; label?.remove(); };
   // Never steal a stroke from a drawing, or interrupt a question or a Forehead round.
-  const blocked = target => target.closest?.('canvas, dialog') || document.querySelector('dialog[open], .countdown, #stage:not([hidden])');
+  const blocked = target => target.closest?.('canvas, dialog, .arcade') || document.querySelector('dialog[open], .countdown, #stage:not([hidden])');
   addEventListener('touchstart', e => {
     hide();
     if (e.touches.length === 1 && scrollY <= 0 && !blocked(e.target)) start = [e.touches[0].clientX, e.touches[0].clientY];

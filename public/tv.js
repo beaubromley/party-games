@@ -158,7 +158,7 @@ function finale(s) {
     const verdict = el('p', { className: 'question verdict' }, s.headline ?? (top ? `${winners.join(' & ')} ${winners.length > 1 ? 'tie for the win!' : 'wins!'}` : 'Nobody scored. A true tie!'));
     nodes.push(top > 0 ? wrap(verdict, WINNER_AT + 0.5) : verdict, top > 0 && podium(s.players.map(p => ({ name: p.name, score: p.score })), started));
   }
-  const extra = [...(s.mostLiked ?? []).slice(0, 3).map(l => el('div', { className: 'answer' }, el('b', { className: 'verse' }, l.text), el('p', {}, `${l.by || 'The real answer'}: ${l.likes} ${l.likes === 1 ? 'like' : 'likes'}`))),
+  const extra = [...(s.miniTrophy ? [el('div', { className: 'answer' }, el('b', {}, `Mini Game Trophy: ${s.miniTrophy.names.join(' and ')}`), el('p', {}, `${s.miniTrophy.wins} round ${s.miniTrophy.wins === 1 ? 'win' : 'wins'}`))] : []), ...(s.mostLiked ?? []).slice(0, 3).map(l => el('div', { className: 'answer' }, el('b', { className: 'verse' }, l.text), el('p', {}, `${l.by || 'The real answer'}: ${l.likes} ${l.likes === 1 ? 'like' : 'likes'}`))),
     ...(s.awards ?? []).map(a => el('div', { className: 'answer' }, el('b', {}, a.title), el('p', {}, a.names.join(' & ')))),
     s.cast && el('div', { className: 'answer cast' }, el('b', {}, 'Who was who'), s.cast.map(line => el('p', {}, line)))].filter(Boolean);
   if (extra.length) nodes.push(wrap(grid(...extra), WINNER_AT + 1.2));

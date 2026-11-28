@@ -3,7 +3,7 @@
 // npm test -- tv newer     rules plus just those groups
 import { spawn } from 'node:child_process';
 
-const GROUPS = ['newer', 'tv', 'party', 'classic', 'extras']; // longest first
+const GROUPS = ['newer', 'tv', 'party', 'classic', 'extras', 'mini']; // longest first
 const AT_ONCE = 3;
 const asked = process.argv.slice(2);
 const quick = asked.includes('--quick');

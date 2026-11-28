@@ -854,4 +854,5 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
   assert.deepEqual(v.alive, ['p0', 'p2']);
   assert.match(rules.view(v, 'p0').answer, /pies\./);
 }
+await import('./mini.mjs');
 console.log('rules checks passed');
