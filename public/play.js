@@ -1,11 +1,11 @@
 import { el, homeLink, podium, timed, enterScreen, ask, dismiss, climbing, WINNER_AT } from './ui.js';
-import { play, soundOn, setSound } from './sound.js';
+import { play, soundOn, setSound, musicOn, setMusic } from './sound.js';
 import { keepAwake } from './wake.js';
 import { savePicture } from './save.js';
 import { picture, sketchpad } from './canvas.js';
 import { shrink, saveFace, savedFace, FACE_DAYS } from './face.js';
 import { BLUFF_TOPICS } from './topics.js';
-import { PARTY_GAMES, partyScreen } from './party-ui.js';
+import { PARTY_GAMES, partyScreen, perform } from './party-ui.js';
 import { nudger } from './nudge.js';
 
 const app = document.getElementById('app');
@@ -125,6 +125,59 @@ const soundButton = () => {
   const fallback = state.you === state.host, on = soundOn(fallback);
   return el('button', { className: 'sound', ariaPressed: on, onclick: () => { setSound(!on); render(); if (!on) setTimeout(() => play('ding'), 100); } }, `Sound: ${on ? 'on' : 'off'}`);
 };
+const musicButton = () => el('button', { className: 'sound music', ariaPressed: musicOn(), onclick: () => { setMusic(!musicOn()); render(); } }, `Music: ${musicOn() ? 'on' : 'off'}`);
+// A yes-or-no request that works from any screen.
+async function request(body) {
+  const mine = me;
+  try { const data = await api({ ...mine, ...body }); if (me === mine) apply(data); return true; } // body wins: both can name a game
+  catch (err) { note.textContent = err.message; return false; }
+}
+// Your own turn, kept in view for as long as the screen is up.
+function yoursPanel() {
+  if (!state.yours) return null;
+  const show = y => y.strokes ? picture(y.strokes) : el('b', {}, y.text);
+  return el('section', { className: 'yours' }, state.yours.map(y => y.secret
+    ? fold(`secret:${state.step}`, `${y.label} (tap to show)`, el('div', { className: 'answer' }, show(y)))
+    : el('div', { className: 'answer' }, el('p', { className: 'fine' }, y.label), show(y))));
+}
+// Once you've voted: like answers while the others finish. Names and counts come with the results.
+function likePanel() {
+  const others = state.likeables?.filter(o => !o.mine) ?? []; // your own is already shown above
+  if (!others.length) return null;
+  return el('section', { className: 'likeables' }, el('h2', {}, 'Like some while you wait'),
+    others.map(o => el('div', { className: 'answer' }, el('b', { className: game === 'rap' ? 'verse' : '' }, o.text), o.by && el('p', {}, o.by),
+      game === 'rap' && perform(o.text),
+      el('button', { className: 'like' + (o.liked ? ' on' : ''), ariaPressed: o.liked, onclick: () => send({ action: 'like', target: o.ref }) }, o.liked ? 'Liked' : 'Like'))));
+}
+let nameDraft = null;
+function namePicker() {
+  const mine = state.players.find(p => p.id === state.you).name;
+  const input = el('input', { value: nameDraft ?? mine, maxLength: 14, placeholder: 'Your name', ariaLabel: 'New name', autocomplete: 'off', oninput: () => { nameDraft = input.value; } });
+  return fold('name', 'Change your name', el('form', { onsubmit: async e => {
+    e.preventDefault();
+    const name = input.value;
+    if (!await request({ action: 'rename', name })) return;
+    nameDraft = null; opened.delete('name');
+    try { localStorage.setItem('name', name.trim()); } catch {}
+    note.textContent = ''; render();
+  } }, input, el('button', { className: 'big alt' }, 'Save name')));
+}
+// Everyone votes for what to play next. The host has the final say.
+function nextGame(host) {
+  const tally = {};
+  for (const w of state.wants ?? []) (tally[w.game] ??= []).push(w.name);
+  const ranked = Object.keys(tally).sort((a, b) => tally[b].length - tally[a].length);
+  const mine = state.wants?.find(w => w.id === state.you)?.game;
+  const switchTo = (id, text) => button(text, () => send({ action: 'switch', game: id }), 'alt');
+  return el('section', { className: 'panel next' }, el('h2', {}, 'Next game'),
+    ranked.length ? el('ul', { className: 'votes' }, ranked.map(id => el('li', {}, el('b', {}, `${titleOf(id)}: ${tally[id].length}`), ` ${tally[id].join(', ')}`)))
+      : el('p', { className: 'fine' }, 'No votes yet.'),
+    host && ranked.filter(id => id !== game).slice(0, 3).map(id => switchTo(id, `Switch to ${titleOf(id)} (${tally[id].length})`)),
+    fold('vote', mine ? `Your vote: ${titleOf(mine)}` : 'Vote for the next game',
+      el('div', { className: 'chips', role: 'group', ariaLabel: 'Vote for the next game' }, Object.keys(HOW_TO).map(id => el('button', { className: id === mine ? 'on' : '', ariaPressed: id === mine,
+        onclick: () => request({ action: 'want', game: id }) }, titleOf(id))))),
+    host && fold('switch', 'Switch to any game', Object.keys(HOW_TO).filter(id => id !== game).map(id => switchTo(id, `Switch to ${titleOf(id)}`))));
+}
 let me = read(), version = 0, shown = '', state, timer, busy = false;
 const note = el('p', { className: 'note error', role: 'status' });
 const waiting = el('p', { className: 'note' });
@@ -204,26 +257,25 @@ async function api(body) {
   return data;
 }
 const button = (label, onclick, extra = '') => el('button', { className: 'big ' + extra, onclick }, label);
-// Host settings shown between games, tucked away under the start buttons.
-function gameOptions() {
-  const current = TIMER_CHOICES.find(([n]) => n === timerChoice)[1];
-  return fold('options', `Game options (timer: ${current.toLowerCase()})`,
-    el('h2', {}, 'Timer'),
-    el('div', { className: 'chips', role: 'group', ariaLabel: 'Timer' }, TIMER_CHOICES.map(([n, text]) => el('button', { className: n === timerChoice ? 'on' : '', ariaPressed: n === timerChoice,
-      onclick: () => { timerChoice = n; try { localStorage.setItem('timer', n); } catch {} render(); } }, text))),
-    el('p', { className: 'fine' }, 'A countdown to hurry people along. Nothing skips by itself.'),
-    el('h2', {}, 'Switch game (same room)'),
-    Object.keys(HOW_TO).filter(id => id !== game).map(id => button(`Switch to ${titleOf(id)}`, () => send({ action: 'switch', game: id }), 'alt')));
-}
+// The host's settings, in a section of their own that is there on every screen.
 function updateControls() {
   const host = state.you === state.host, playing = !['lobby', 'done'].includes(state.phase);
-  const key = [host, playing, state.phase, state.host, hostAway, state.players.map(p => p.id).join()].join(':');
+  const key = [host, playing, state.phase, state.host, hostAway, state.pokesOff, timerChoice, state.players.map(p => p.id + p.name).join()].join(':');
   if (key === controlsKey) return;
   controlsKey = key;
   const others = state.players.filter(p => p.id !== state.you);
   const hostName = state.players.find(p => p.id === state.host)?.name;
-  const panel = el('details', { open: managing, ontoggle: () => { managing = panel.open; } },
-    el('summary', {}, 'Manage players'),
+  const current = TIMER_CHOICES.find(([n]) => n === timerChoice)[1];
+  const panel = el('details', { className: 'panel options', open: managing, ontoggle: () => { managing = panel.open; } },
+    el('summary', {}, 'Game options'),
+    el('h2', {}, 'Timer'),
+    el('div', { className: 'chips', role: 'group', ariaLabel: 'Timer' }, TIMER_CHOICES.map(([n, text]) => el('button', { className: n === timerChoice ? 'on' : '', ariaPressed: n === timerChoice,
+      onclick: () => { timerChoice = n; try { localStorage.setItem('timer', n); } catch {} updateControls(); } }, text))),
+    el('p', { className: 'fine' }, playing ? `Set to ${current.toLowerCase()} for the next game.` : 'A countdown to hurry people along. Nothing skips by itself.'),
+    el('h2', {}, 'Pestering'),
+    button(`Pestering: ${state.pokesOff ? 'off' : 'on'}`, () => request({ action: 'pokes', on: state.pokesOff }), 'alt pestering'),
+    el('p', { className: 'fine' }, 'Pokes and notes from players who are done.'),
+    others.length > 0 && el('h2', {}, 'Players'),
     others.map(p => button(`Remove ${p.name}`, async () => {
       if (await ask(`Remove ${p.name}?`, 'They will be taken out of this game.', `Remove ${p.name}`)) send({ action: 'kick', target: p.id });
     }, 'alt')),
@@ -232,7 +284,7 @@ function updateControls() {
     }, 'alt'));
   controls.replaceChildren(...[
     host && ['drawing', 'writing', 'voting'].includes(state.phase) && button('Host: skip waiting', () => send({ action: 'next' }), 'alt'),
-    host && (others.length > 0 || playing) && panel,
+    host && panel,
     !host && hostAway && el('p', {}, `${hostName}, the host, seems to be away.`),
     !host && hostAway && button('Take over as host', async () => { if (await ask('Take over as host?', 'You will run the game from this phone.', 'Become host')) send({ action: 'claim' }); }, 'alt'),
   ].filter(Boolean));
@@ -257,7 +309,7 @@ async function quit() {
   clearTimeout(timer); me = null;
   try { await api({ action: 'leave', ...mine }); } catch {}
 }
-function leave() { dismiss(); nudge.reset(); reel = { key: '', items: [] }; opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
+function leave() { dismiss(); nudge.reset(); reel = { key: '', items: [] }; opened.clear(); misses = 0; banner.hidden = true; banner.className = 'banner'; heard = null; bubbles.replaceChildren(); keepAwake(false); deadline = 0; clearTimeout(timer); controlsKey = ''; controls.replaceChildren(); managing = false; hostAway = false; pinged = 0; preview = null; topic = 'trivia'; faces = {}; facesKey = ''; nameDraft = null; me = null; write(null); version = 0; shown = ''; lobbyForm(); }
 
 async function send(body) {
   if (busy) return;
@@ -301,7 +353,8 @@ function apply(data) {
     el('span', { className: 'who-done' }, state.progress.map(p => el('span', { className: p.done ? 'done' : '', ariaLabel: `${p.name}: ${p.done ? 'done' : 'still going'}` }, p.name)))] : []);
   // Only rebuild when the screen really changes, so a half-typed answer or drawing survives polling.
   const key = [state.game, state.step, state.sent, state.item, state.favorite, state.highlights.latest, state.highlights.count, state.canVote, JSON.stringify(state.likes), state.night.map(p => p.name + p.points).join(), state.hint, state.canHint, state.phase === 'lobby' && state.players.length,
-    FACE_SCREENS.includes(state.phase) && state.players.map(p => [p.id, p.face]).join() + state.host,
+    FACE_SCREENS.includes(state.phase) && state.players.map(p => [p.id, p.name, p.face]).join() + state.host,
+    JSON.stringify([state.wants, state.yours?.map(y => [y.label, y.text]), state.likeables]),
     state.requests.map(r => r.id + r.topic).join()].join(':');
   if (key !== shown) {
     // A nudge when there is something new to do.
@@ -362,14 +415,13 @@ function render() {
     const least = PARTY_GAMES[game]?.min ?? 2;
     if (host && s.players.length >= least) nodes.push(...startButtons());
     else nodes.push(el('p', {}, s.players.length < least ? `Need at least ${least} players.` : 'Waiting for the host to start.'));
-    if (host) nodes.push(gameOptions());
-    nodes.push(fold('photo', 'Your photo', facePicker()), ...nightBoard(host), ...highlightReel());
+    nodes.push(nextGame(host), namePicker(), fold('photo', 'Your photo', facePicker()), ...nightBoard(host), ...highlightReel());
   } else if (PARTY_GAMES[game] && s.phase !== 'done') {
     nodes.push(...partyScreen({ s, host, send, button, faceImg, scores, redraw: render, reveal, like }));
   } else if (s.phase === 'drawing') {
     if (s.sent) nodes.push(el('h1', {}, 'Nice art!'));
     else {
-      const pad = sketchpad();
+      const pad = sketchpad({ slot: true });
       nodes.push(el('p', {}, 'Secretly draw:'), el('p', { className: 'question' }, s.prompt), ...pad.nodes,
         button('Send drawing', () => send({ action: 'drawing', strokes: pad.strokes() })));
     }
@@ -445,10 +497,11 @@ function render() {
         el('p', { className: 'fine' }, `${a.detail[0].toUpperCase()}${a.detail.slice(1)} (${a.times})`)))), ceremony.at, WINNER_AT + 1.2));
     nodes.push(...nightBoard(host), ...highlightReel(), ...invite());
     nodes.push(topicPicker(host));
-    if (host) nodes.push(el('h2', {}, 'Play again'), ...startButtons(), button('Back to lobby', () => send({ action: 'restart' }), 'alt'), gameOptions());
+    if (host) nodes.push(el('h2', {}, 'Play again'), ...startButtons(), button('Back to lobby', () => send({ action: 'restart' }), 'alt'));
     else nodes.push(el('p', {}, 'Waiting for the host to start another game.'));
-    nodes.push(fold('photo', 'Your photo', facePicker()));
+    nodes.push(nextGame(host), namePicker(), fold('photo', 'Your photo', facePicker()));
   }
+  nodes.push(yoursPanel(), likePanel(), s.phase === 'reveal' && namePicker());
   const exit = button('Leave party', async () => {
     if (!await ask('Leave the party?', `You can come back with the code ${me.code}.`, 'Leave party')) return;
     remember();
@@ -457,7 +510,7 @@ function render() {
   if (!['lobby', 'done'].includes(s.phase)) nodes.push(el('p', { className: 'fine party-code' }, `Room code ${me.code}`));
   if (['writing', 'drawing', 'voting'].includes(s.phase)) nodes.unshift(clock);
   if (['reveal', 'done'].includes(s.phase)) nodes.push(cheers);
-  nodes.push(nudge.panel, controls, waiting, note, el('div', { className: 'prefs' }, soundButton(), textSizeButton()), exit,
+  nodes.push(nudge.panel, controls, waiting, note, el('div', { className: 'prefs' }, soundButton(), musicButton(), textSizeButton()), exit,
     game === 'bluff' && el('footer', {}, 'Trivia: ', el('a', { href: 'https://opentdb.com' }, 'Open Trivia Database'), ' (CC BY-SA 4.0), filtered, plus some written for this app.'));
   app.replaceChildren(...nodes.filter(Boolean));
   // Jump to the top for a new screen only, not when browsing topics.

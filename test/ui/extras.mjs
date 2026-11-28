@@ -20,7 +20,7 @@ import { base, phone, click, yes, scribble, finish } from './browser.mjs';
   await cy.locator('canvas.pad').waitFor(); await scribble(cy);
   const ink = () => cy.evaluate(() => document.querySelector('canvas.pad').getContext('2d').getImageData(0, 0, 1000, 1000).data.filter((v, i) => i % 4 === 3 && v).length);
   const before = await ink(); assert.ok(before > 0);
-  await host.getByText('Manage players').click();
+  await host.getByText('Game options').click();
   await host.screenshot({ path: '/tmp/manage.png', fullPage: true });
   await click(host, 'Remove Bo');
   await click(host.locator('dialog.ask'), 'Cancel'); await host.locator('dialog.ask').waitFor({ state: 'detached' });
@@ -36,7 +36,7 @@ import { base, phone, click, yes, scribble, finish } from './browser.mjs';
   sqlite.prepare('UPDATE presence SET seen = 0 WHERE code = ?').run(code);
   await cy.reload(); await click(cy, 'Take over as host'); await yes(cy);
   await cy.getByRole('button', { name: 'Host: skip waiting' }).waitFor({ timeout: 8000 });
-  await cy.getByText('Manage players').click();
+  await cy.getByText('Game options').click();
   await click(cy, 'Remove Ann'); await yes(cy); // one player cannot carry on
   await cy.getByText(/Back to the lobby/).waitFor({ timeout: 8000 });
   await cy.screenshot({ path: '/tmp/restarted.png', fullPage: true });
@@ -52,14 +52,14 @@ import { base, phone, click, yes, scribble, finish } from './browser.mjs';
   for (const [p, name] of [[bo, 'Bo'], [cy, 'Cy']]) { await p.goto(`${base}/play.html?game=majority&code=${code}`); await p.getByPlaceholder('Your name').fill(name); await click(p, 'Join room'); }
   await host.locator('#recap li').nth(2).waitFor({ timeout: 8000 });
   await click(host, 'Start: 5 questions');
-  await bo.locator('input').fill('half typed');
+  await bo.getByPlaceholder('Your answer').fill('half typed');
   assert.equal(await bo.locator('.nudge:visible').count(), 0, 'no pestering before you finish');
-  await host.locator('input').fill('cake'); await click(host, 'Send');
+  await host.getByPlaceholder('Your answer').fill('cake'); await click(host, 'Send');
   await host.locator('.nudge').waitFor({ timeout: 8000 });
   await click(host, 'Bo'); await click(host, 'Write a note');
   const box = host.getByPlaceholder('Your note');
   await box.fill('Any day now, Bo');
-  await cy.locator('input').fill('pie'); await click(cy, 'Send'); // the list changes while Ann types
+  await cy.getByPlaceholder('Your answer').fill('pie'); await click(cy, 'Send'); // the list changes while Ann types
   await host.locator('.nudge').getByRole('button', { name: 'Cy', exact: true }).waitFor({ state: 'detached', timeout: 8000 });
   assert.equal(await box.inputValue(), 'Any day now, Bo');
   assert.ok(await box.evaluate(n => n === document.activeElement), 'still typing');
@@ -67,14 +67,96 @@ import { base, phone, click, yes, scribble, finish } from './browser.mjs';
   await click(host, 'Send note'); await host.getByText('Sent to Bo.').waitFor({ timeout: 8000 });
   await bo.locator('.popup').getByText('Any day now, Bo').waitFor({ timeout: 8000 });
   await bo.waitForTimeout(800); await bo.screenshot({ path: '/tmp/popup.png' });
-  assert.equal(await bo.locator('input').inputValue(), 'half typed');
+  assert.equal(await bo.getByPlaceholder('Your answer').inputValue(), 'half typed');
   await bo.locator('.popup').click(); assert.equal(await bo.locator('.popup').count(), 0);
-  await click(cy, 'Poke'); await bo.getByText('Cy poked you!').waitFor({ timeout: 8000 });
-  await bo.locator('input').fill('cake'); await click(bo, 'Send'); await host.locator('.answer.winner').waitFor({ timeout: 8000 });
+  await host.getByText(/Next poke in \d+s/).waitFor({ timeout: 8000 });
+  assert.ok(await host.locator('.nudge button.poke').isDisabled(), 'resting between pokes');
+  assert.equal(await host.getByRole('button', { name: 'Everyone' }).count(), 0);
+  const age = () => { const row = sqlite.prepare('SELECT state, version FROM rooms WHERE code = ?').get(code), r = JSON.parse(row.state); r.pokes?.forEach(x => { x.at -= 60000; }); sqlite.prepare('UPDATE rooms SET state = ?, version = ? WHERE code = ?').run(JSON.stringify(r), row.version + 1, code); };
+  age(); await click(cy, 'Poke'); await bo.getByText('Cy poked you!').waitFor({ timeout: 8000 });
+  // A second one waits underneath instead of showing alongside.
+  age(); await host.waitForTimeout(900); await click(host, 'Hurry up!');
+  await bo.getByText('Tap for the next one (1 more)').waitFor({ timeout: 8000 });
+  assert.equal(await bo.locator('.popup').count(), 1);
+  await bo.screenshot({ path: '/tmp/piled.png' });
+  await bo.locator('.popup').click(); await bo.locator('.popup').getByText('Hurry up!').waitFor();
+  // The host can switch pestering off in the middle of a game.
+  await host.getByText('Game options').click(); await host.screenshot({ path: '/tmp/options.png', fullPage: true });
+  await click(host, 'Pestering: on');
+  await cy.locator('.nudge').waitFor({ state: 'hidden', timeout: 8000 });
+  await bo.locator('.popup').waitFor({ state: 'detached', timeout: 8000 });
+  await click(host, 'Pestering: off'); await cy.locator('.nudge').waitFor({ timeout: 8000 });
+  age(); await click(cy, 'Poke'); await bo.getByText('Cy poked you!').waitFor({ timeout: 8000 });
+  await bo.getByPlaceholder('Your answer').fill('cake'); await click(bo, 'Send'); await host.locator('.answer.winner').waitFor({ timeout: 8000 });
   await bo.locator('.popup').waitFor({ state: 'detached', timeout: 8000 });
   await host.locator('.nudge').waitFor({ state: 'hidden' });
   for (const p of phones) await p.context().close();
   console.log('pokes: passed');
+}
+// Drawing: a poke lands above the picture, never on it.
+{
+  const phones = [await phone(), await phone(), await phone()];
+  const [host, bo, cy] = phones;
+  await host.goto(`${base}/play.html?game=doodle`);
+  await host.getByPlaceholder('Your name').fill('Ann'); await click(host, 'Create a room');
+  const code = (await host.locator('.code').textContent()).trim();
+  for (const [p, name] of [[bo, 'Bo'], [cy, 'Cy']]) { await p.goto(`${base}/play.html?game=doodle&code=${code}`); await p.getByPlaceholder('Your name').fill(name); await click(p, 'Join room'); }
+  await host.locator('#recap li').nth(2).waitFor({ timeout: 8000 });
+  await click(host, 'Start drawing');
+  await scribble(host); await click(host, 'Send drawing');
+  await host.getByText('Your drawing').waitFor({ timeout: 8000 });
+  await bo.locator('canvas.pad').waitFor(); await scribble(bo);
+  const before = await bo.locator('canvas.pad').boundingBox();
+  await host.locator('.nudge').waitFor({ timeout: 8000 }); await click(host, 'Bo'); await click(host, "We're waiting!");
+  await bo.locator('.popup').waitFor({ timeout: 8000 });
+  const note = await bo.locator('.popup').boundingBox(), canvas = await bo.locator('canvas.pad').boundingBox();
+  assert.ok(note.y + note.height <= canvas.y + 0.5, 'popup sits above the canvas');
+  assert.equal(canvas.y, before.y, 'and the canvas does not move');
+  await bo.screenshot({ path: '/tmp/drawpoke.png' });
+  for (const p of phones) await p.context().close();
+  console.log('pokes while drawing: passed');
+}
+// Your answer stays up, likes open once you vote, names change between rounds, and players vote on what is next.
+{
+  const phones = [await phone(), await phone(), await phone()];
+  const [host, bo, cy] = phones;
+  await host.goto(`${base}/play.html?game=faceoff`);
+  await host.getByPlaceholder('Your name').fill('Ann'); await click(host, 'Create a room');
+  const code = (await host.locator('.code').textContent()).trim();
+  for (const [p, name] of [[bo, 'Bo'], [cy, 'Cy']]) { await p.goto(`${base}/play.html?game=faceoff&code=${code}`); await p.getByPlaceholder('Your name').fill(name); await click(p, 'Join room'); }
+  await host.locator('#recap li').nth(2).waitFor({ timeout: 8000 });
+  await bo.getByText('Change your name').click(); await bo.getByLabel('New name').fill('Bobby');
+  await host.waitForTimeout(700); await click(bo, 'Save name');
+  await host.locator('#recap li', { hasText: 'Bobby' }).waitFor({ timeout: 8000 });
+  await bo.getByText('Vote for the next game').click(); await click(bo, 'Rhyme Battle');
+  await host.getByText('Rhyme Battle: 1').waitFor({ timeout: 8000 });
+  await host.getByRole('button', { name: 'Switch to Rhyme Battle (1)' }).waitFor();
+  await host.screenshot({ path: '/tmp/lobby.png', fullPage: true });
+  await host.evaluate(() => { const start = OscillatorNode.prototype.start; window.notes = 0; OscillatorNode.prototype.start = function (...a) { window.notes++; return start.apply(this, a); }; });
+  await click(host, 'Music: off'); await host.getByRole('button', { name: 'Music: on' }).waitFor();
+  await host.waitForFunction(() => window.notes >= 4, null, { timeout: 8000 });
+  await click(host, 'Music: on');
+  const played = await host.evaluate(() => window.notes);
+  await host.waitForTimeout(1500);
+  assert.equal(await host.evaluate(() => window.notes), played, 'music stops when switched off');
+  await click(host, 'Start: 1 round');
+  for (const [i, p] of phones.entries()) for (let k = 0; k < 2; k++) {
+    await p.getByText(`Your prompt ${k + 1} of 2`).waitFor({ timeout: 8000 });
+    await p.locator('input').first().fill(`answer ${i} ${k}`); await click(p, 'Send');
+    if (i === 0 && k === 0) await p.locator('.yours', { hasText: 'answer 0 0' }).waitFor({ timeout: 8000 });
+  }
+  // With three players, exactly one votes on each matchup; the writers wait and can like.
+  await host.getByText(/Matchup 1 of 3/).waitFor({ timeout: 8000 });
+  let voter;
+  for (const p of phones) { await p.getByText(/Matchup 1 of 3/).waitFor({ timeout: 8000 }); if (!await p.getByText('This one is yours').count()) voter = p; }
+  const writer = phones.find(p => p !== voter);
+  await writer.locator('.likeables button.like').first().click();
+  await writer.locator('.likeables button.like.on').waitFor({ timeout: 8000 });
+  await writer.screenshot({ path: '/tmp/likes.png', fullPage: true });
+  await voter.locator('main button.big:not(.alt):enabled').first().click();
+  await voter.getByRole('button', { name: /^Liked \(1\)|^Like \(1\)/ }).first().waitFor({ timeout: 8000 });
+  for (const p of phones) await p.context().close();
+  console.log('answers, likes, names and next game: passed');
 }
 const solo = await phone();
 await solo.goto(`${base}/draw.html`);

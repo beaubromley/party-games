@@ -226,7 +226,7 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
       if (['writing', 'drawing', 'voting'].includes(r.phase)) assert.ok(rules.waitingOn(r).length, `idle in ${r.phase}: ${log}`);
       // The TV never gets anything private.
       const tv = screen(r), flat = JSON.stringify(tv);
-      assert.ok(!/"(secret|you|mine|nudge|hint|role|roleId|peeks|partners|prompt_|faking|clue|bluffedBy|sittingOut|starters|prev)":/.test(flat), `TV leak: ${log} ${flat.slice(0, 300)}`);
+      assert.ok(!/"(secret|you|mine|nudge|yours|likeables|hint|role|roleId|peeks|partners|prompt_|faking|clue|bluffedBy|sittingOut|starters|prev)":/.test(flat), `TV leak: ${log} ${flat.slice(0, 300)}`);
       if (r.phase !== 'reveal' && r.phase !== 'done') assert.ok(!/"(truth|voters|authorIds|authorId_|faker|fakerId|cast|entries)":/.test(flat), `TV spoils: ${log} ${r.phase}`);
       if (r.phase !== 'done') assert.ok(!('cast' in tv) && !/Pie Thief|Watchdog/.test(r.phase === 'reveal' ? '' : flat), log);
       if (game === 'oddone' && r.phase === 'writing') assert.ok(!flat.includes(r.prompts[r.index].split('|')[0]), 'TV shows the faker the prompt');
@@ -611,41 +611,54 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
   rules.poke(r, 'p0', 'p1', '  Hurry   up ', 1000);
   assert.deepEqual(rules.view(r, 'p1').pokes, [{ n: 1, from: 'P0', text: 'Hurry up' }]);
   assert.deepEqual(rules.view(r, 'p2').pokes, []);
-  assert.throws(() => rules.poke(r, 'p0', 'p1', '', 2000), /few seconds/);
-  rules.poke(r, 'p0', 'all', 'y'.repeat(90), 3000);
+  assert.throws(() => rules.poke(r, 'p0', 'all', '', 50000), /done now/, 'no sending to everyone');
+  assert.throws(() => rules.poke(r, 'p0', 'p2', '', 2000), /Wait 19 more seconds/, 'one poke per sender, whoever it is for');
+  rules.poke(r, 'p0', 'p2', 'y'.repeat(90), 21000);
   assert.equal(rules.view(r, 'p2').pokes[0].text.length, 60);
-  assert.equal(rules.view(r, 'p1').pokes.length, 1, 'cooling down');
-  rules.poke(r, 'p0', 'p1', '', 7000);
-  assert.equal(rules.view(r, 'p1').pokes.length, 2);
-  assert.throws(() => rules.poke(r, 'p0', 'p0', '', 20000), /done now/);
-  for (let g = 0; g < 100; g++) rules.poke(r, 'p0', 'all', '', 30000 + g * 6000);
+  for (let k = 0; k < 2; k++) rules.submitFake(r, 'p1', 'z' + k, rules.view(r, 'p1').item);
+  if (r.phase === 'writing') {
+    assert.throws(() => rules.poke(r, 'p1', 'p2', '', 22000), /just poked/, 'the receiver gets a breather too');
+    rules.poke(r, 'p1', 'p2', '', 31000);
+  }
+  assert.throws(() => rules.poke(r, 'p0', 'p0', '', 90000), /done now/);
+  for (let g = 0; g < 100; g++) rules.poke(r, 'p0', 'p2', '', 100000 + g * 20000);
   assert.ok(r.pokes.length <= 40);
+  rules.setPokes(r, false);
+  assert.equal(rules.view(r, 'p0').nudge, undefined);
+  assert.deepEqual(rules.view(r, 'p2').pokes, [], 'switching off clears pop-ups');
+  assert.throws(() => rules.poke(r, 'p0', 'p2', '', 9e6), /turned pestering off/);
+  rules.setPokes(r, true);
+  assert.ok(rules.view(r, 'p0').nudge);
   rules.advance(r);
-  assert.deepEqual(rules.view(r, 'p1').pokes ?? [], [], 'old pokes vanish');
+  assert.deepEqual(rules.view(r, 'p2').pokes ?? [], [], 'old pokes vanish');
   while (r.phase !== 'reveal') rules.advance(r);
-  assert.throws(() => rules.poke(r, 'p0', 'all', ''), /your own turn/);
+  assert.throws(() => rules.poke(r, 'p0', 'p1', ''), /your own turn/);
   const s = room('snack', 5);
   rules.start(s, {});
   move(s, 'p0');
   assert.equal(rules.view(s, 'p0').canNote, false);
-  assert.throws(() => rules.poke(s, 'p0', 'all', 'psst it is Bo'), /just pokes/);
-  rules.poke(s, 'p0', 'all', '');
+  assert.throws(() => rules.poke(s, 'p0', 'p1', 'psst it is Bo'), /just pokes/);
+  rules.poke(s, 'p0', 'p1', '');
   s.alive = s.alive.filter(id => id !== 'p0');
-  assert.throws(() => rules.poke(s, 'p0', 'all', ''), /your own turn/);
+  assert.throws(() => rules.poke(s, 'p0', 'p2', ''), /your own turn/);
   const h = await handle(query, { action: 'create', game: 'majority', name: 'A' });
   const j = await handle(query, { action: 'join', code: h.code, name: 'B' });
   const [a, b] = [h, j].map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
   const go = await handle(query, { action: 'start', ...a, step: 0 });
   await handle(query, { action: 'fake', ...a, step: go.state.step, text: 'cake' });
-  await assert.rejects(handle(query, { action: 'poke', ...a, secret: 'no', to: 'all' }), /not in this room/);
-  await handle(query, { action: 'poke', ...a, to: 'all', text: 'go' });
+  await assert.rejects(handle(query, { action: 'poke', ...a, secret: 'no', to: b.playerId }), /not in this room/);
+  await assert.rejects(handle(query, { action: 'pokes', ...b, on: false }), /Only the host/);
+  assert.equal((await handle(query, { action: 'pokes', ...a, on: false })).state.pokesOff, true);
+  await assert.rejects(handle(query, { action: 'poke', ...a, to: b.playerId }), /turned pestering off/);
+  await handle(query, { action: 'pokes', ...a, on: true });
+  await handle(query, { action: 'poke', ...a, to: b.playerId, text: 'go' });
   assert.equal((await handle(query, { action: 'poll', ...b })).state.pokes[0].from, 'A');
 }
 // Likes: toggled on results, not your own, no points, and counted for an award.
 {
   const m = room('majority', 4);
   rules.start(m, { prompts: ['q'] });
-  assert.throws(() => rules.like(m, 'p0', 'p1'), /results/);
+  assert.throws(() => rules.like(m, 'p0', 'p1'), /once you have voted|results/i);
   ['soda', 'pop', 'tea', 'milk'].forEach((text, i) => rules.submitFake(m, 'p' + i, text));
   assert.throws(() => rules.like(m, 'p0', 'p0'), /yours/);
   rules.like(m, 'p0', 'p1'); rules.like(m, 'p2', 'p1'); rules.like(m, 'p2', 'p1'); rules.like(m, 'p3', 'p0');
@@ -715,5 +728,123 @@ assert.equal(rules.validDrawing([[0, 12, [1, 2, 'x', 4]]]), false);
   await assert.rejects(handle(query, { action: 'cast-send', code: cast.code, secret: 'no', status: 'waiting' }), /ended/);
   await assert.rejects(handle(query, { action: 'cast-send', ...cast, status: 'drawing', strokes: [[99]] }), /Could not share/);
   await assert.rejects(handle(query, { action: 'cast-watch', code: 'ZZZZZ' }), /Nobody/);
+}
+// AI help sees what others sent, never repeats itself, and stays away from the real answer.
+{
+  const { leans } = await import('../lib/match.js');
+  const { message } = await import('../lib/hint.js');
+  assert.ok(leans('The walls of Jericho', 'the city walls', 'What fell?'));
+  assert.ok(leans('A wooden boat', 'a boat', 'What did he build?'));
+  assert.ok(!leans('A giant sandwich', 'the city walls', 'What fell?'));
+  assert.ok(!leans('A city of tents', 'the city walls', 'What fell around the city?'), 'words from the question are fine');
+  assert.ok(message({ question: 'q', avoid: ['one\ntwo'] }, 'x').includes('- one / two'));
+  const h = await handle(query, { action: 'create', game: 'faceoff', name: 'A' });
+  const ps = [h];
+  for (const name of ['B', 'C']) ps.push(await handle(query, { action: 'join', code: h.code, name }));
+  const who = ps.map(p => ({ code: h.code, playerId: p.playerId, secret: p.secret }));
+  await handle(query, { action: 'start', ...who[0], step: 0, rounds: 1 });
+  const at = async p => (await handle(query, { action: 'poll', ...p })).state;
+  // Everyone but the asker answers first, so the shared prompt has an answer to see.
+  for (const p of who.slice(1)) for (let k = 0; k < 2; k++) { const x = await at(p); if (x.phase === 'writing' && !x.sent) await handle(query, { action: 'fake', ...p, step: x.step, item: x.item, text: `Purple walrus ${p.playerId.slice(0, 3)} ${k}` }); }
+  const seen = [], ideas = ['Same old joke', 'Same old joke', 'A brand new one'];
+  const ask = async q => { seen.push(q); return ideas.shift(); };
+  let v = await at(who[0]);
+  await handle(query, { action: 'hint', ...who[0], step: v.step }, { ask });
+  assert.equal(seen[0].avoid.length, 1);
+  assert.match(seen[0].avoid[0], /Purple walrus/);
+  v = await at(who[0]);
+  await handle(query, { action: 'fake', ...who[0], step: v.step, item: v.item, text: 'Something of mine' });
+  v = await at(who[0]);
+  await handle(query, { action: 'hint', ...who[0], step: v.step }, { ask });
+  assert.equal((await at(who[0])).hint, 'A brand new one', 'a repeat is thrown out and asked again');
+  assert.ok(seen.at(-1).avoid.includes('Same old joke'));
+  const bluff = await handle(query, { action: 'create', game: 'bluff', name: 'A' });
+  await handle(query, { action: 'join', code: bluff.code, name: 'B' });
+  const a = { code: bluff.code, playerId: bluff.playerId, secret: bluff.secret };
+  const go = await handle(query, { action: 'start', ...a, step: 0, topic: 'bible', rounds: 3 });
+  let real, tries = 0;
+  await assert.rejects(handle(query, { action: 'hint', ...a, step: go.state.step }, { ask: async q => { tries++; real = q.answer; return `${real} indeed`; } }), /new one/);
+  assert.equal(tries, 3);
+  assert.equal((await handle(query, { action: 'poll', ...a })).state.canHint, true, 'nothing charged');
+}
+// What you sent stays in view, and likes can start once you have voted.
+{
+  const r = room('bluff', 4);
+  rules.start(r, [{ question: 'q', answer: 'truth' }]);
+  rules.submitFake(r, 'p0', 'first fake');
+  assert.deepEqual(rules.view(r, 'p0').yours, [{ label: 'Your answer', text: 'first fake' }]);
+  assert.equal(rules.view(r, 'p1').yours, undefined);
+  for (const [i, id] of ['p1', 'p2', 'p3'].entries()) rules.submitFake(r, id, ['second', 'third', 'fourth'][i]);
+  const pick = text => r.options.findIndex(o => o.text === text);
+  assert.equal(rules.view(r, 'p0').likeables, undefined);
+  assert.throws(() => rules.like(r, 'p0', pick('second')), /once you have voted/);
+  rules.vote(r, 'p0', pick('truth'));
+  assert.deepEqual(rules.view(r, 'p0').yours.map(y => y.text), ['first fake', 'truth']);
+  const list = rules.view(r, 'p0').likeables;
+  assert.equal(list.length, 5);
+  assert.ok(list.every(o => !o.authors && !o.by && !('truth' in o)), 'nothing gives the answer away');
+  rules.like(r, 'p0', pick('second')); rules.like(r, 'p0', pick('truth'));
+  assert.throws(() => rules.like(r, 'p0', pick('first fake')), /yours/);
+  assert.equal(rules.view(r, 'p0').likes, undefined, 'counts wait for the results');
+  assert.equal(rules.view(r, 'p0').likeables.filter(o => o.liked).length, 2);
+  rules.advance(r);
+  assert.deepEqual(rules.view(r, 'p2').likes.p1, ['p0'], 'likes carry into the results');
+  for (const game of ['faceoff', 'rap', 'oddone', 'split', 'whosaid']) {
+    const g = room(game, 4);
+    rules.start(g, deals[game]?.(4) ?? { sets: 1, prompts: ['a', 'b', 'c', 'd'] });
+    for (let n = 0; g.phase !== 'voting' && n < 40; n++) move(g, rules.waitingOn(g)[0], Math.random, undefined, 'answer ' + n);
+    const voter = rules.waitingOn(g)[0];
+    assert.ok(rules.view(g, voter).yours || game !== 'oddone', game);
+    move(g, voter);
+    const targets = rules.view(g, voter).likeables, other = targets.find(t => !t.mine);
+    assert.ok(other, game);
+    rules.like(g, voter, other.ref);
+    assert.equal(rules.view(g, voter).likeables.find(t => t.ref === other.ref).liked, true, game);
+    rules.advance(g);
+    assert.equal(Object.values(g.likes).flat().length, 1, `${game} keeps likes`);
+    rules.advance(g);
+    assert.deepEqual(g.likes, {}, `${game} clears them next screen`);
+  }
+}
+// New names between rounds, and votes for the next game.
+{
+  const r = room('majority', 3);
+  rules.want(r, 'p1', 'rap'); rules.want(r, 'p2', 'rap'); rules.want(r, 'p2', 'rap');
+  assert.deepEqual(rules.view(r, 'p0').wants, [{ id: 'p1', name: 'P1', game: 'rap' }]);
+  assert.throws(() => rules.want(r, 'p1', 'chess'), /Unknown/);
+  r.night = { p1: { name: 'P1', points: 3, wins: 1 } };
+  assert.throws(() => rules.rename(r, 'p1', ' p0 '), /taken/);
+  rules.rename(r, 'p1', 'Zed');
+  assert.deepEqual(r.night, { zed: { name: 'Zed', points: 3, wins: 1 } });
+  rules.rename(r, 'p1', 'ZED');
+  assert.equal(r.players[1].name, 'ZED');
+  rules.start(r, { prompts: ['q', 'r'] });
+  assert.deepEqual(r.wants, {});
+  assert.throws(() => rules.rename(r, 'p1', 'Mid'), /between rounds/);
+  assert.throws(() => rules.want(r, 'p1', 'rap'), /between games/);
+  rules.advance(r);
+  rules.rename(r, 'p1', 'Later');
+}
+// Last One Standing ramps up.
+{
+  const { SURVIVAL } = await import('../lib/more-content.js');
+  const all = Object.values(SURVIVAL).flat();
+  assert.equal(new Set(all.map(q => q.split('|')[0])).size, all.length, 'no repeated questions');
+  assert.ok(all.every(q => { const [, ...a] = q.split('|'); return a.length === 4 && new Set(a).size === 4; }));
+  const h = await handle(query, { action: 'create', game: 'survival', name: 'A' });
+  await handle(query, { action: 'join', code: h.code, name: 'B' });
+  const a = { code: h.code, playerId: h.playerId, secret: h.secret };
+  await handle(query, { action: 'start', ...a, step: 0, rounds: 12 });
+  const dealt = JSON.parse((await query('SELECT state FROM rooms WHERE code = ?', [h.code]))[ 'rows'][0].state).questions;
+  assert.deepEqual(dealt.map(q => Object.keys(SURVIVAL).find(k => SURVIVAL[k].includes(q))), ['easy', 'easy', ...Array(5).fill('medium'), ...Array(5).fill('hard')]);
+  const v = room('survival', 3);
+  rules.start(v, deals.survival());
+  v.index = 6;
+  rules.vote(v, 'p0', v.quiz.right); rules.vote(v, 'p1', (v.quiz.right + 1) % 4); rules.vote(v, 'p2', v.quiz.right);
+  rules.advance(v);
+  assert.equal(v.kind, 'pie'); assert.equal(v.quiz.hot.length, 2);
+  rules.vote(v, 'p1', v.quiz.hot[1]);
+  assert.deepEqual(v.alive, ['p0', 'p2']);
+  assert.match(rules.view(v, 'p0').answer, /pies\./);
 }
 console.log('rules checks passed');

@@ -1,6 +1,6 @@
 // A screen for the whole room: watches a party by its code and never takes part.
 import { el, podium, timed, climbing, enterScreen, WINNER_AT } from './ui.js';
-import { play, soundOn, setSound } from './sound.js';
+import { play, soundOn, setSound, musicOn, setMusic } from './sound.js';
 import { keepAwake } from './wake.js';
 import { picture } from './canvas.js';
 import { PARTY_GAMES } from './party-ui.js';
@@ -69,6 +69,7 @@ function form(message = '', prefill = '') {
 
 const tools = () => el('div', { className: 'tools' },
   el('button', { ariaPressed: soundOn(), onclick: () => { const on = !soundOn(); setSound(on); drawHead(); if (on) setTimeout(() => play('ding'), 100); } }, `Sound: ${soundOn() ? 'on' : 'off'}`),
+  el('button', { ariaPressed: musicOn(), onclick: () => { setMusic(!musicOn()); drawHead(); } }, `Music: ${musicOn() ? 'on' : 'off'}`),
   document.documentElement.requestFullscreen && el('button', { onclick: () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {}) }, 'Full screen'),
   el('button', { onclick: () => leave() }, 'Change room'));
 function progressLine(s) {

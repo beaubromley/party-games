@@ -14,7 +14,8 @@ function unlock() {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return;
   ctx ??= new Ctx();
-  if (ctx.state !== 'running') ctx.resume().catch(() => {});
+  if (ctx.state !== 'running') ctx.resume().then(tune, () => {});
+  else tune();
 }
 addEventListener('pointerdown', unlock);
 function tone(freq, at, length, type = 'triangle', volume = 0.18) {
@@ -37,3 +38,54 @@ const EFFECTS = {
 export function play(name, delay = 0, fallback = true) {
   if (ctx?.state === 'running' && soundOn(fallback)) EFFECTS[name](delay);
 }
+
+// ---- Ambient music: soft chords and the odd chime, made up as it goes. Off until this device asks for it.
+const CHORDS = [[48, 55, 64, 71], [45, 52, 60, 67], [41, 48, 57, 64], [43, 50, 59, 64]]; // MIDI notes
+const CHIMES = [72, 74, 76, 79, 81, 84];
+const BAR = 6; // seconds per chord
+const hertz = note => 440 * 2 ** ((note - 69) / 12);
+let music = (() => { try { return localStorage.getItem('music') === 'on'; } catch { return false; } })();
+let band = null, bar = 0;
+export const musicOn = () => music;
+export function setMusic(on) {
+  music = on;
+  try { localStorage.setItem('music', on ? 'on' : 'off'); } catch {}
+  if (on) unlock(); else tune();
+}
+function note(out, midi, at, length, volume, rise, type = 'sine') {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type; o.frequency.value = hertz(midi);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(volume, at + rise);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + length);
+  o.connect(g).connect(out);
+  o.start(at); o.stop(at + length);
+}
+// Starts or stops the band to match the setting. It rests while the app is out of sight.
+function tune() {
+  const wanted = music && !document.hidden && ctx?.state === 'running';
+  if (wanted === Boolean(band)) return;
+  if (!wanted) {
+    const { out, timer } = band;
+    band = null;
+    clearInterval(timer);
+    out.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.2);
+    setTimeout(() => out.disconnect(), 1200);
+    return;
+  }
+  const out = ctx.createGain();
+  out.gain.value = 1;
+  out.connect(ctx.destination);
+  let next = ctx.currentTime + 0.05;
+  const fill = () => {
+    while (next < ctx.currentTime + 1.5) {
+      const chord = CHORDS[bar++ % CHORDS.length];
+      chord.forEach(n => note(out, n, next, BAR + 2, 0.025, 2, 'triangle'));
+      for (const beat of [1.5, 3, 4.5]) if (Math.random() < 0.6) note(out, CHIMES[Math.floor(Math.random() * CHIMES.length)], next + beat, 1.6, 0.03, 0.02);
+      next += BAR;
+    }
+  };
+  fill();
+  band = { out, timer: setInterval(fill, 500) };
+}
+addEventListener('visibilitychange', () => ctx && (music && !document.hidden ? unlock() : tune()));

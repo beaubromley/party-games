@@ -47,7 +47,7 @@ import { base, screenPage, click, finish } from './browser.mjs';
       const waiting = rules.waitingOn(r);
       if (!waiting.length) { rules.advance(r, random); continue; }
       // Leave the last person slow, so there is someone to pester on screen.
-      if (r.phase === 'writing' && waiting.length === 1 && !r.pokes?.length) { rules.poke(r, r.players.find(p => !waiting.includes(p.id) && (game !== 'snack' || r.alive.includes(p.id)))?.id, 'all', game === 'snack' ? '' : 'Any day now!'); save(); await tv.getByText('Pokes and notes').waitFor({ timeout: 8000 }); assert.ok(await tv.evaluate(() => document.querySelector('.feed li').getBoundingClientRect().bottom <= innerHeight), `${game}: pokes off screen`); await tv.screenshot({ path: `/tmp/tv-${game}-poke.png` }); }
+      if (r.phase === 'writing' && waiting.length === 1 && !r.pokes?.length) { rules.poke(r, r.players.find(p => !waiting.includes(p.id) && (game !== 'snack' || r.alive.includes(p.id)))?.id, waiting[0], game === 'snack' ? '' : 'Any day now!'); save(); await tv.getByText('Pokes and notes').waitFor({ timeout: 8000 }); assert.ok(await tv.evaluate(() => document.querySelector('.feed li').getBoundingClientRect().bottom <= document.querySelector('aside').getBoundingClientRect().bottom + 0.5), `${game}: pokes off screen`); await tv.screenshot({ path: `/tmp/tv-${game}-poke.png` }); }
       const id = waiting[0];
       move(r, id, random, line, ['Soda', 'a very silly answer that is quite long indeed ok', 'Tacos', 'Grandma'][g % 4] + (game === 'majority' ? '' : ' ' + g));
     }

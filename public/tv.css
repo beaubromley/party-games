@@ -14,7 +14,7 @@
 .tv .clock.low { color: var(--red); }
 .tv .joinat { text-align: right; }
 .tv .joinat .code { font-size: 2.4em; line-height: 1; margin: 0; }
-.tv .tools { display: grid; gap: 0.3em; }
+.tv .tools { display: grid; grid-template-columns: auto auto; gap: 0.3em; }
 .tv .tools button { font: inherit; font-size: max(12px, 0.7em); padding: 0.4em 0.8em; background: transparent; border: 2px solid var(--ink); border-radius: 4px; color: var(--ink); }
 .tv .middle { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 20em; gap: 1.6em; }
 .tv .room { min-height: 0; overflow: hidden; }

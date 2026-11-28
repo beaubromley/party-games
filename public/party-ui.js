@@ -17,7 +17,7 @@ export const PARTY_GAMES = {
   ...MORE_GAMES,
 };
 // Reads a verse out in the phone's own voice.
-function perform(text) {
+export function perform(text) {
   if (!window.speechSynthesis) return false;
   return el('button', { className: 'like hear', onclick: () => {
     speechSynthesis.cancel();
@@ -86,7 +86,6 @@ export function partyScreen(context) {
       if (!s.canVote) nodes.push(say('This one is yours. Act natural.'));
       else if (s.sent) nodes.push(say('Vote locked in.'));
       else nodes.push(...s.options.flatMap((o, i) => [Object.assign(button(o.mine ? `${o.text} (yours)` : o.text, () => send({ action: 'vote', choice: i }), rap ? 'verse' : ''), { disabled: o.mine }), rap && perform(o.text)]));
-      if (rap && (!s.canVote || s.sent)) nodes.push(...s.options.map(o => el('section', { className: 'answer' }, el('b', { className: 'verse' }, o.text), perform(o.text))));
     } else {
       const top = Math.max(...s.options.map(o => o.voters.length));
       // Fewest votes first, so the winner lands last.
@@ -127,7 +126,7 @@ export function partyScreen(context) {
     if (s.sittingOut) nodes.push(say("You're in! You'll play the next game, and you can vote at the end of this one."));
     else if (s.sent) nodes.push(say('Nice art! Waiting to pass.'));
     else {
-      const pad = sketchpad();
+      const pad = sketchpad({ slot: true });
       nodes.push(el('p', {}, 'Draw this:'), say(s.prev.text), ...pad.nodes, button('Send drawing', () => send({ action: 'drawing', strokes: pad.strokes() })));
     }
   } else if (s.phase === 'voting') {

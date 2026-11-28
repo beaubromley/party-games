@@ -35,7 +35,7 @@ export function moreScreen({ s, host, send, button, faceImg, scores, redraw, lik
     } else if (s.phase === 'voting') {
       if (s.sittingOut) nodes.push(sitting());
       nodes.push(el('p', {}, 'The real prompt was:'), say(s.question), el('p', {}, "Talk it over. Who didn't know it?"));
-      if (s.sent) nodes.push(...s.options.map(o => el('section', { className: 'answer' }, el('b', {}, o.text), el('p', {}, faceImg(o.id), o.name))), !s.sittingOut && say('Vote locked in.'));
+      if (s.sent) nodes.push(!s.sittingOut && say('Vote locked in.'), ...s.likeables ? [] : s.options.map(o => el('section', { className: 'answer' }, el('b', {}, o.text), el('p', {}, faceImg(o.id), o.name))));
       else nodes.push(...s.options.map(o => Object.assign(choose(`${o.name}: ${o.text}`, o.id), { disabled: o.mine })));
     } else {
       nodes.push(say(s.question), card(el('section', { className: 'answer winner' }, el('b', {}, `${s.faker} was faking!`), faceImg(s.fakerId, 'large'),
@@ -69,7 +69,7 @@ export function moreScreen({ s, host, send, button, faceImg, scores, redraw, lik
       else if (s.sent) nodes.push(say('Sent!'), edit('Edit my answer', s.mine));
       else nodes.push(el('p', {}, 'Finish the sentence. Your name stays hidden.'), ...answerForm('Your answer', 60));
     } else if (s.phase === 'voting') {
-      if (s.sent) nodes.push(...s.answers.map(a => el('section', { className: 'answer' }, el('b', {}, a.text))), say(s.sittingOut ? "You're in! You'll join the next round." : 'Guesses locked in.'));
+      if (s.sent) nodes.push(say(s.sittingOut ? "You're in! You'll join the next round." : 'Guesses locked in.'), ...s.likeables ? [] : s.answers.map(a => el('section', { className: 'answer' }, el('b', {}, a.text))));
       else {
         const key = `${s.you}:${s.step}`;
         if (guesses.key !== key) guesses = { key, picks: {} };

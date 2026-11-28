@@ -16,7 +16,7 @@ export function picture(strokes) {
   for (const s of strokes) paint(c.getContext('2d'), s);
   return c;
 }
-export function sketchpad() {
+export function sketchpad({ slot = false } = {}) {
   const canvas = el('canvas', { width: 1000, height: 1000, className: 'pad' });
   const ctx = canvas.getContext('2d');
   let strokes = [], color = 0, brush = 1, live = null, points = 0;
@@ -52,5 +52,6 @@ export function sketchpad() {
   brushes.append(...BRUSHES.map(([name], i) => el('button', { type: 'button', className: i === brush ? 'on' : '', ariaPressed: i === brush,
     onclick: () => { brush = i; [...brushes.children].forEach((b, j) => { b.classList.toggle('on', i === j); b.ariaPressed = i === j; }); } },
     el('i', { className: `dot dot${i}` }), name)));
-  return { nodes: [canvas, brushes, tools], strokes: () => strokes };
+  // `slot` keeps space free for pop-ups, so they never land on the picture.
+  return { nodes: [slot && el('div', { className: 'pokeslot' }), canvas, brushes, tools].filter(Boolean), strokes: () => strokes };
 }

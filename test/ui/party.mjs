@@ -123,11 +123,11 @@ for (const game of ['faceoff', 'majority', 'telephone']) {
     await host.getByRole('heading', { name: 'Fan favorite', exact: true }).waitFor();
     await host.waitForTimeout(900); await host.screenshot({ path: '/tmp/favorite.png', fullPage: true });
     // Switch everyone to another game with a timer, without rejoining.
-    await host.getByText(/^Game options/).click(); await click(host, 'Switch to Majority Rules');
+    await host.getByText('Switch to any game').click(); await click(host, 'Switch to Majority Rules');
     for (const p of phones) await p.getByRole('heading', { name: 'Majority Rules' }).waitFor({ timeout: 8000 });
     await host.screenshot({ path: '/tmp/switched.png', fullPage: true });
-    await host.getByRole('button', { name: '60s', exact: true }).click(); // the options stay open across redraws
-    await host.getByText('Game options (timer: 60s)').waitFor();
+    await host.getByText('Game options').click(); await host.getByRole('button', { name: '60s', exact: true }).click(); // the options stay open across redraws
+    await host.getByRole('button', { name: '60s', exact: true, pressed: true }).waitFor();
     await click(host, 'Start: 5 questions');
     for (const p of phones) { await p.locator('.timer:visible').waitFor({ timeout: 8000 }); assert.match(await p.locator('.timer').textContent(), /^(1:00|0:\d\d)$/); }
     await say(guests[1], 'Dog'); await host.getByText('1 of 3 done').waitFor({ timeout: 8000 });

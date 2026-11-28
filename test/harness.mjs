@@ -37,5 +37,5 @@ const content = await import('../lib/more-content.js');
 export const deals = {
   rap: n => ({ sets: 2, prompts: content.RAP.slice(0, 2 * n) }), oddone: () => ({ prompts: content.ODD.slice(0, 3) }),
   split: () => ({ sets: 2, stems: content.SPLIT.slice(0, 24) }), whosaid: () => ({ prompts: content.WHOSAID.slice(0, 3) }),
-  snack: () => ({}), survival: () => ({ questions: content.SURVIVAL.slice(0, 8) }),
+  snack: () => ({}), survival: () => ({ questions: content.SURVIVAL.medium.slice(0, 8) }),
 };

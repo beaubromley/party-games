@@ -227,3 +227,19 @@ button.big.verse { text-align: left; line-height: 1.5; font-size: 17px; }
 @keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-12px) rotate(-1deg); } 40%, 80% { transform: translateX(12px) rotate(1deg); } }
 @media (prefers-reduced-motion: reduce) { .popup { animation: none; } }
 .menu a.tvlink { background: transparent; color: var(--ink); border: 3px solid var(--ink); }
+/* Pop-ups wait in a pile: only the top one shows. */
+.popup.piled { box-shadow: 0 6px 0 var(--paper), 0 9px 0 var(--ink), 0 12px 0 var(--gold), 0 15px 0 var(--ink); }
+/* Drawing: nothing floats over the picture. */
+.pokeslot { height: 60px; margin-top: 6px; }
+.pokeslot .pokes { position: static; height: 100%; }
+.pokeslot .popup { height: 100%; padding: 2px 8px; overflow: hidden; line-height: 1.15; box-shadow: none; animation: none; }
+.pokeslot .popup b, .pokeslot .popup span { display: inline; font-size: 15px; margin: 0 4px 0 0; }
+.pokeslot .popup small { margin: 0; font-size: 11px; }
+main:has(canvas.pad) .timer { position: static; }
+.nudge .wait { font-weight: 700; opacity: 1; }
+.panel { border: 2px solid var(--ink); border-radius: 6px; padding: 4px 12px 12px; margin-top: 18px; }
+.panel h2 { margin-top: 10px; }
+.votes { list-style: none; padding: 0; line-height: 1.6; }
+.yours .answer { border-style: dashed; }
+.yours .answer b, .likeables .answer b { display: block; font-size: 20px; white-space: pre-line; }
+.likeables .answer b.verse { font-size: 18px; }
